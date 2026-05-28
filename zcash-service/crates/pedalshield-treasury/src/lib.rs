@@ -1,0 +1,38 @@
+//! Pedalshield FROST treasury and payout service.
+//!
+//! Today: domain types, anomaly rules, in-memory claim ledger, and a
+//! real FROST 2-of-3 (or t-of-n) **rerandomized** threshold-signing
+//! ceremony using FROST-over-RedPallas (ZIP-312) via the `reddsa` +
+//! `frost-rerandomized` crates. The ceremony produces signatures valid
+//! under a randomized verifying key - the same value an Orchard spend
+//! description publishes as `rk`.
+//!
+//! The `orchard_bridge` module wires the two-stage ceremony into the
+//! shape an Orchard payout transaction needs; the FROST seam is real
+//! and tested, the orchard / lightwalletd calls are stubbed pending
+//! deps and a few cargo-iteration rounds (see
+//! `docs/ORCHARD_INTEGRATION.md`).
+//!
+//! See `zcash-service/README.md` for the full integration roadmap.
+
+pub mod anomaly;
+pub mod error;
+pub mod frost_coordinator;
+pub mod ledger;
+pub mod orchard_bridge;
+pub mod types;
+
+pub use anomaly::{check_claim, enforce_daily_cap, km_in_window, AnomalyConfig};
+pub use error::{PedalshieldError, Result};
+pub use frost_coordinator::{
+    CeremonyOutput, FrostCoordinator, PendingCeremony, Signer, VerifyingKey,
+};
+pub use ledger::{ClaimLedger, InMemoryLedger};
+pub use orchard_bridge::{
+    finalize_payout, plan_payout, PayoutPlan, TreasuryNote, Txid,
+};
+pub use types::{
+    compute_reward_zatoshi, now_ms, BatchId, Claim, ClaimId, ClaimLedgerStatus,
+    LedgerEntry, PayoutBatch, PayoutRecipient, RideId, RideStatus, RiderId,
+    Zatoshi,
+};

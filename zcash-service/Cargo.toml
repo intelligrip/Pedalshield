@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/pedalshield-treasury"]
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+
+[profile.dev]
+opt-level = 1

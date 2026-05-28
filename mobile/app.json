@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Pedalshield",
+    "slug": "pedalshield",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "pedalshield",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0A0E1A"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.pedalshield.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Pedalshield uses GPS only on-device to verify your ride distance. Your route never leaves the phone.",
+        "NSMotionUsageDescription": "Pedalshield uses motion sensors on-device to verify pedaling cadence. No motion data is uploaded."
+      }
+    },
+    "android": {
+      "package": "com.pedalshield.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "ACTIVITY_RECOGNITION"
+      ]
+    }
+  }
+}

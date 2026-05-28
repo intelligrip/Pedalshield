@@ -1,0 +1,53 @@
+[package]
+name = "pedalshield-treasury"
+version = "0.1.0"
+edition = "2021"
+description = "Pedalshield FROST treasury and shielded payout service"
+license = "MIT"
+publish = false
+
+[dependencies]
+# FROST over RedPallas with rerandomization (ZIP-312) - the ciphersuite
+# Zcash uses for Orchard spend auth. There is no standalone
+# `frost-redpallas` crate on crates.io; the `reddsa` crate provides the
+# RedPallas Ciphersuite + ZIP-312 rerandomized FROST helpers behind the
+# `frost` feature flag. `frost-rerandomized` is pulled in transitively.
+# RedPallas + ZIP-312 rerandomization. `reddsa` provides the RedPallas
+# Ciphersuite and re-exports `rerandomized::aggregate` (4 args, with
+# randomizer). The matching `rerandomized::sign` is *not* re-exported by
+# reddsa - it lives in `frost-rerandomized` at the crate root. Pin "3"
+# (not "2") so it matches the `frost-core` version reddsa 0.5.2 brings
+# in transitively; otherwise Cargo resolves two frost-core versions and
+# the types stop unifying.
+reddsa = { version = "0.5", features = ["frost"] }
+frost-rerandomized = "3"
+
+# Optional: Orchard transaction construction. Enabled by the
+# `orchard-integration` feature so the default `cargo check` /
+# `cargo test` runs without these heavy deps.
+#
+# Version pins are wildcards for now - zcash_primitives 0.18 was
+# yanked, and orchard / zcash_primitives versions move together with
+# librustzcash releases. cargo picks the latest compatible release.
+# Pin to exact versions once the v0.3 wiring stabilises.
+orchard = { version = "*", optional = true }
+zcash_primitives = { version = "*", optional = true }
+
+rand   = "0.8"
+sha2   = "0.10"
+serde  = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+hex    = "0.4"
+
+[features]
+default = []
+# Pull in `orchard` + `zcash_primitives` and switch `orchard_bridge`'s
+# bundle-construction functions from `unimplemented!()` stubs to real
+# wiring. Run `cargo check --features orchard-integration` during the
+# v0.3 iteration loop; the default build stays unaffected.
+orchard-integration = ["dep:orchard", "dep:zcash_primitives"]
+
+[[bin]]
+name = "treasury_demo"
+path = "src/bin/treasury_demo.rs"
