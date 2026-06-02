@@ -21,8 +21,7 @@ Pedalshield is a move-to-earn cycling app that pays real shielded ZEC from a FRO
 ## Try it in 60 seconds
 
 ```bash
-# Replace YOUR/REPO with the actual GitHub path.
-git clone https://github.com/YOUR/REPO.git pedalshield
+git clone https://github.com/intelligrip/Pedalshield.git pedalshield
 cd pedalshield/mobile
 node --test \
   src/verification/__tests__/*.test.ts \

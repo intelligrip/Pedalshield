@@ -43,6 +43,13 @@ export interface RideSessionSnapshot {
   startedAt: number | null;
   endedAt: number | null;
   stats: RideSessionStats;
+  /**
+   * Live polyline points. Sliced from the internal `geo` buffer so React
+   * sees a new array reference each notify() and the map re-renders. The
+   * route never leaves the device - this array is consumed only by the
+   * on-device map and discarded on reset().
+   */
+  liveRoute: ReadonlyArray<{ lat: number; lon: number }>;
   result: RideVerificationResult | null;
   errorMessage: string | null;
 }
@@ -195,6 +202,7 @@ export class RideSession {
       startedAt: this.startedAt,
       endedAt: this.endedAt,
       stats: this.computeStats(),
+      liveRoute: this.geo.map((p) => ({ lat: p.lat, lon: p.lon })),
       result: this.result,
       errorMessage: this.errorMessage,
     };

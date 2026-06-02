@@ -1,0 +1,114 @@
+// Minimal lightwalletd service definition for Pedalshield.
+//
+// Subset of zcash/lightwalletd/walletrpc/service.proto + the relevant
+// types from compact_formats.proto. Just enough for:
+//   v0.5.2a: GetLightdInfo + GetLatestBlock (connectivity probe)
+//   v0.5.2b: GetBlockRange streaming (wallet sync / balance scan)
+//   v0.5.3:  SendTransaction (broadcast our shielded payouts)
+
+syntax = "proto3";
+package cash.z.wallet.sdk.rpc;
+
+service CompactTxStreamer {
+    // Return basic server info (version, chain, current block height).
+    rpc GetLightdInfo (Empty) returns (LightdInfo) {}
+
+    // Return the tip of the chain that the server is tracking.
+    rpc GetLatestBlock (ChainSpec) returns (BlockID) {}
+
+    // Stream compact blocks in [start, end] inclusive. Each CompactBlock
+    // contains only the bytes a wallet needs to scan for its notes -
+    // nullifiers, note commitments, ephemeral keys, and a 52-byte
+    // compact ciphertext. Full block data is not transmitted.
+    rpc GetBlockRange (BlockRange) returns (stream CompactBlock) {}
+
+    // Broadcast a serialised transaction. Returns lightwalletd's
+    // forwarded response from zcashd's sendrawtransaction RPC.
+    rpc SendTransaction (RawTransaction) returns (SendResponse) {}
+}
+
+message Empty {}
+
+message ChainSpec {}
+
+message BlockID {
+    uint64 height = 1;
+    bytes  hash   = 2;
+}
+
+message BlockRange {
+    BlockID start = 1;
+    BlockID end   = 2;
+}
+
+message RawTransaction {
+    bytes  data   = 1;
+    uint64 height = 2;
+}
+
+message SendResponse {
+    int32  error_code    = 1;
+    string error_message = 2;
+}
+
+message LightdInfo {
+    string version                   = 1;
+    string vendor                    = 2;
+    bool   taddr_support             = 3;
+    string chain_name                = 4;
+    uint64 sapling_activation_height = 5;
+    string consensus_branch_id       = 6;
+    uint64 block_height              = 7;
+    string git_commit                = 8;
+    string branch                    = 9;
+    string build_date                = 10;
+    string build_user                = 11;
+    uint64 estimated_height          = 12;
+    string zcashd_build              = 13;
+    string zcashd_subversion         = 14;
+}
+
+// CompactBlock + nested messages are defined in lightwalletd's
+// compact_formats.proto. Field tags below match the upstream exactly.
+
+message CompactBlock {
+    uint32        proto_version  = 1;
+    uint64        height         = 2;
+    bytes         hash           = 3;
+    bytes         prev_hash      = 4;
+    uint32        time           = 5;
+    bytes         header         = 6;
+    repeated CompactTx vtx       = 7;
+    ChainMetadata chain_metadata = 8;
+}
+
+message CompactTx {
+    uint64 index                      = 1;
+    bytes  hash                       = 2;
+    uint32 fee                        = 3;
+    repeated CompactSaplingSpend  spends  = 4;
+    repeated CompactSaplingOutput outputs = 5;
+    repeated CompactOrchardAction actions = 6;
+}
+
+message CompactSaplingSpend {
+    bytes nf = 1;
+}
+
+message CompactSaplingOutput {
+    bytes cmu           = 1;
+    bytes ephemeral_key = 2;
+    bytes ciphertext    = 3;
+}
+
+message CompactOrchardAction {
+    bytes nullifier     = 1;
+    bytes cmx           = 2;
+    bytes ephemeral_key = 3;
+    bytes ciphertext    = 4;
+}
+
+message ChainMetadata {
+    uint32 sapling_commitment_tree_size = 1;
+    uint32 orchard_commitment_tree_size = 2;
+}

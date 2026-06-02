@@ -3,8 +3,8 @@
 // the sandbox. At Expo build time the real packages shadow this shim.
 
 declare module 'react' {
-  export type ReactNode = unknown;
-  export type ComponentType<P = unknown> = (props: P) => ReactNode;
+  export type ReactNode = any;
+  export type ComponentType<P = unknown> = any;
   export function useState<T>(initial: T): [T, (next: T | ((prev: T) => T)) => void];
   export function useEffect(fn: () => void | (() => void), deps?: readonly unknown[]): void;
   export function useRef<T>(initial: T): { current: T };
@@ -65,6 +65,37 @@ declare module 'react-native' {
     absoluteFillObject: ViewStyle;
     hairlineWidth: number;
   };
+
+  export interface ModalProps extends ViewProps {
+    visible?: boolean;
+    animationType?: 'none' | 'slide' | 'fade';
+    transparent?: boolean;
+    onRequestClose?: () => void;
+  }
+  export const Modal: ComponentType<ModalProps>;
+
+  export const Dimensions: {
+    get(dim: 'window' | 'screen'): { width: number; height: number; scale: number; fontScale: number };
+  };
+}
+
+declare module 'react-native-svg' {
+  import type { ComponentType, ReactNode } from 'react';
+  export interface SvgProps {
+    width?: number | string;
+    height?: number | string;
+    viewBox?: string;
+    children?: ReactNode;
+    [k: string]: unknown;
+  }
+  const Svg: ComponentType<SvgProps>;
+  export default Svg;
+  export const Path: ComponentType<{ d?: string; [k: string]: unknown }>;
+  export const Circle: ComponentType<{ cx?: number | string; cy?: number | string; r?: number | string; [k: string]: unknown }>;
+  export const Line: ComponentType<{ x1?: number | string; y1?: number | string; x2?: number | string; y2?: number | string; [k: string]: unknown }>;
+  export const Defs: ComponentType<{ children?: ReactNode }>;
+  export const RadialGradient: ComponentType<{ id?: string; cx?: string; cy?: string; r?: string; children?: ReactNode }>;
+  export const Stop: ComponentType<{ offset?: string; stopColor?: string; stopOpacity?: string | number }>;
 }
 
 declare module '@react-navigation/native' {

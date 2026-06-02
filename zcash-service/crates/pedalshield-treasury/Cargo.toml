@@ -5,33 +5,35 @@ edition = "2021"
 description = "Pedalshield FROST treasury and shielded payout service"
 license = "MIT"
 publish = false
+build = "build.rs"
+
+[build-dependencies]
+tonic-build = "0.11"
 
 [dependencies]
 # FROST over RedPallas with rerandomization (ZIP-312) - the ciphersuite
-# Zcash uses for Orchard spend auth. There is no standalone
-# `frost-redpallas` crate on crates.io; the `reddsa` crate provides the
-# RedPallas Ciphersuite + ZIP-312 rerandomized FROST helpers behind the
-# `frost` feature flag. `frost-rerandomized` is pulled in transitively.
-# RedPallas + ZIP-312 rerandomization. `reddsa` provides the RedPallas
-# Ciphersuite and re-exports `rerandomized::aggregate` (4 args, with
-# randomizer). The matching `rerandomized::sign` is *not* re-exported by
-# reddsa - it lives in `frost-rerandomized` at the crate root. Pin "3"
-# (not "2") so it matches the `frost-core` version reddsa 0.5.2 brings
-# in transitively; otherwise Cargo resolves two frost-core versions and
-# the types stop unifying.
+# Zcash uses for Orchard spend auth. Pinned to versions that resolve to
+# a single frost-core (3.0); mixing 2.x and 3.x breaks type unification.
 reddsa = { version = "0.5", features = ["frost"] }
 frost-rerandomized = "3"
 
-# Optional: Orchard transaction construction. Enabled by the
-# `orchard-integration` feature so the default `cargo check` /
-# `cargo test` runs without these heavy deps.
+# Orchard transaction construction. As of v0.5 these are *default* deps
+# (no longer behind a feature flag) because the mainnet payout path is
+# now in the critical path for the hackathon submission.
 #
-# Version pins are wildcards for now - zcash_primitives 0.18 was
-# yanked, and orchard / zcash_primitives versions move together with
-# librustzcash releases. cargo picks the latest compatible release.
-# Pin to exact versions once the v0.3 wiring stabilises.
-orchard = { version = "*", optional = true }
-zcash_primitives = { version = "*", optional = true }
+# Version pins are wildcards: zcash crate versions move together with
+# librustzcash releases. Cargo picks the latest compatible release.
+# Pin to exact versions once v0.5 stabilises on mainnet.
+orchard          = "*"
+zcash_primitives = "*"
+zcash_address    = "*"
+zcash_keys       = { version = "*", features = ["orchard"] }
+zcash_protocol   = "*"
+zip32            = "*"
+
+# Seed phrase generation for the treasury backup. Standard BIP-39
+# wordlist + entropy. `tiny-bip39` is the maintained fork.
+tiny-bip39 = "1"
 
 rand   = "0.8"
 sha2   = "0.10"
@@ -40,14 +42,52 @@ serde_json = "1"
 thiserror = "1"
 hex    = "0.4"
 
+# Backend HTTP service (axum + tokio + rusqlite). Used by the `backend`
+# binary; not pulled in by the library's other consumers because cargo
+# bin-targets only compile their direct deps + the lib's deps.
+axum                = "0.7"
+tokio               = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tower               = "0.4"
+tower-http          = { version = "0.5", features = ["trace", "cors"] }
+tracing             = "0.1"
+tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
+rusqlite            = { version = "0.31", features = ["bundled"] }
+uuid                = { version = "1", features = ["v4"] }
+
+# Lightwalletd gRPC client (used by `treasury_ping` and later by the
+# wallet scanner / broadcaster). Vendored .proto in `proto/`; build.rs
+# runs tonic-build to generate the Rust bindings into the OUT_DIR.
+tonic               = { version = "0.11", features = ["tls", "tls-roots"] }
+prost               = "0.12"
+tokio-stream        = "0.1"
+
+# Note encryption / decryption primitives. Pulled in transitively
+# through `orchard`, but we use the trait method `try_compact_note_decryption`
+# directly so it's listed explicitly for clarity.
+zcash_note_encryption = "*"
+
 [features]
 default = []
-# Pull in `orchard` + `zcash_primitives` and switch `orchard_bridge`'s
-# bundle-construction functions from `unimplemented!()` stubs to real
-# wiring. Run `cargo check --features orchard-integration` during the
-# v0.3 iteration loop; the default build stays unaffected.
-orchard-integration = ["dep:orchard", "dep:zcash_primitives"]
+# Legacy flag kept for backward compatibility with v0.3-v0.4 callers.
+# Now a no-op because orchard + zcash_primitives are default deps.
+orchard-integration = []
 
 [[bin]]
 name = "treasury_demo"
 path = "src/bin/treasury_demo.rs"
+
+[[bin]]
+name = "treasury_keygen"
+path = "src/bin/treasury_keygen.rs"
+
+[[bin]]
+name = "backend"
+path = "src/bin/backend.rs"
+
+[[bin]]
+name = "treasury_ping"
+path = "src/bin/treasury_ping.rs"
+
+[[bin]]
+name = "treasury_balance"
+path = "src/bin/treasury_balance.rs"

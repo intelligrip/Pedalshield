@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
+import { MainnetStatusChip } from '../components/MainnetStatusChip.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
@@ -28,7 +29,10 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   return (
     <ScreenContainer>
       <View style={styles.header}>
-        <Text style={styles.brand}>Pedalshield</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.brand}>Pedalshield</Text>
+          <MainnetStatusChip />
+        </View>
         <Text style={styles.tagline}>Ride private. Earn shielded.</Text>
       </View>
 
@@ -66,7 +70,12 @@ export function HomeScreen({ navigation }: { navigation: any }) {
 }
 
 const styles = StyleSheet.create({
-  header: { gap: 4 },
+  header: { gap: theme.space.xs },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   brand: {
     color: theme.color.text,
     fontSize: theme.font.h1.size,
