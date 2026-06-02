@@ -66,6 +66,16 @@ tokio-stream        = "0.1"
 # directly so it's listed explicitly for clarity.
 zcash_note_encryption = "*"
 
+# ECC wallet machinery for v0.5.3 spend construction. Provides the
+# commitment-tree maintenance, note-witness tracking, and tx-build
+# pipeline we'd otherwise have to write ourselves (weeks of work,
+# easy to get wrong). Heavy compile - first build is 10-15 minutes.
+zcash_client_backend = { version = "*", features = ["orchard", "transparent-inputs"] }
+zcash_client_sqlite  = { version = "*", features = ["orchard"] }
+
+# CLI subcommand parsing for the treasury_wallet binary.
+clap = { version = "4", features = ["derive"] }
+
 [features]
 default = []
 # Legacy flag kept for backward compatibility with v0.3-v0.4 callers.
@@ -91,3 +101,7 @@ path = "src/bin/treasury_ping.rs"
 [[bin]]
 name = "treasury_balance"
 path = "src/bin/treasury_balance.rs"
+
+[[bin]]
+name = "treasury_wallet"
+path = "src/bin/treasury_wallet.rs"
