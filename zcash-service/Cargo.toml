@@ -9,3 +9,10 @@ codegen-units = 1
 
 [profile.dev]
 opt-level = 1
+
+# No patches currently active. We previously vendored core2 because
+# orchard 0.11 (pulled by zcash_client_backend 0.20) required the
+# yanked core2 0.3.x; on the bump to zcash_client_backend 0.22 +
+# orchard 0.13 the core2 dep disappeared entirely. Keep
+# `vendor/core2/` checked in as a fallback in case we ever need to
+# pin back to the pre-fork crates.

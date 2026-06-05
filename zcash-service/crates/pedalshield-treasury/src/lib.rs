@@ -20,6 +20,7 @@ pub mod error;
 pub mod frost_coordinator;
 pub mod ledger;
 pub mod orchard_bridge;
+pub mod spend;
 pub mod types;
 
 pub use anomaly::{check_claim, enforce_daily_cap, km_in_window, AnomalyConfig};

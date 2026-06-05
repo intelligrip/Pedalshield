@@ -19,11 +19,13 @@
 //!
 //! ENDPOINTS
 //!
-//!     GET  /healthz             liveness check
-//!     GET  /treasury/info       treasury UA + status
-//!     POST /claim               accept a ride claim (queues for payout)
-//!     GET  /claims              admin: list claims, optional ?status=pending|paid
-//!     GET  /claims/{id}         fetch a single claim
+//!     GET  /healthz                       liveness check
+//!     GET  /treasury/info                 treasury UA + status
+//!     POST /claim                         accept a ride claim (queues for payout)
+//!     GET  /claims                        admin: list claims, optional ?status=...
+//!     GET  /claims/{id}                   fetch a single claim
+//!     POST /claims/{id}/mark-paid         operator action: mark claim paid + record tx hash
+//!     POST /claims/{id}/reject            operator action: reject a claim with a reason
 //!
 //! All endpoints return JSON. Errors use HTTP status codes (400 / 404 /
 //! 500) with a JSON body `{ "error": "..." }`.
@@ -37,7 +39,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -126,6 +128,24 @@ struct ClaimsQuery {
     limit: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+struct MarkPaidBody {
+    /// 64-character hex Zcash mainnet transaction id from the operator's
+    /// Zashi wallet (or any wallet that broadcast the payout).
+    tx_hash: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RejectBody {
+    reason: String,
+}
+
+#[derive(Debug, Serialize)]
+struct OperatorActionResponse {
+    status: &'static str,
+    claim_id: String,
+}
+
 #[derive(Debug, Serialize)]
 struct ApiError {
     error: String,
@@ -171,6 +191,25 @@ fn validate_ua(ua: &str) -> Result<(), AppError> {
             return Err(AppError::BadRequest(format!(
                 "recipient_ua contains invalid char {:?} at position {}",
                 c, i
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_tx_hash(tx: &str) -> Result<(), AppError> {
+    // Zcash tx ids are 32-byte SHA-256 digests, hex-encoded => 64 chars.
+    // Most block explorers also accept and display them in lowercase.
+    if tx.len() != 64 {
+        return Err(AppError::BadRequest(format!(
+            "tx_hash must be 64 hex chars; got {} chars",
+            tx.len()
+        )));
+    }
+    for c in tx.chars() {
+        if !c.is_ascii_hexdigit() {
+            return Err(AppError::BadRequest(format!(
+                "tx_hash contains non-hex char {c:?}"
             )));
         }
     }
@@ -299,6 +338,40 @@ fn list_claims(
             .collect::<Result<_, _>>()?
     };
     Ok(rows)
+}
+
+/// Update a pending claim to paid + record the on-chain tx hash.
+/// Returns Ok(true) on success, Ok(false) if the claim doesn't exist
+/// or isn't in `pending` state.
+fn mark_claim_paid(
+    conn: &Connection,
+    id: &str,
+    tx_hash: &str,
+) -> Result<bool, rusqlite::Error> {
+    let now = now_secs() as i64;
+    let n = conn.execute(
+        "UPDATE claims
+         SET status = 'paid', payout_txid = ?1, updated_at = ?2
+         WHERE id = ?3 AND status = 'pending'",
+        params![tx_hash, now, id],
+    )?;
+    Ok(n > 0)
+}
+
+/// Update a pending claim to rejected with a free-form reason.
+fn reject_claim(
+    conn: &Connection,
+    id: &str,
+    reason: &str,
+) -> Result<bool, rusqlite::Error> {
+    let now = now_secs() as i64;
+    let n = conn.execute(
+        "UPDATE claims
+         SET status = 'rejected', rejection_reason = ?1, updated_at = ?2
+         WHERE id = ?3 AND status = 'pending'",
+        params![reason, now, id],
+    )?;
+    Ok(n > 0)
 }
 
 fn count_pending(conn: &Connection) -> Result<u64, rusqlite::Error> {
@@ -469,6 +542,306 @@ async fn get_claim_handler(
     row.map(Json).ok_or_else(|| AppError::NotFound(format!("claim {id} not found")))
 }
 
+async fn mark_paid_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<MarkPaidBody>,
+) -> Result<Json<OperatorActionResponse>, AppError> {
+    let tx_hash = body.tx_hash.trim().to_lowercase();
+    validate_tx_hash(&tx_hash)?;
+
+    let updated = {
+        let conn = state.db.lock().unwrap();
+        // Ensure the claim exists first so we can return a 404 instead of
+        // a misleading "not in pending state" if the operator typo's the id.
+        let row = fetch_claim(&conn, &id)
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+        if row.is_none() {
+            return Err(AppError::NotFound(format!("claim {id} not found")));
+        }
+        mark_claim_paid(&conn, &id, &tx_hash)
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?
+    };
+
+    if !updated {
+        return Err(AppError::BadRequest(format!(
+            "claim {id} is not in `pending` state; refusing to overwrite"
+        )));
+    }
+
+    tracing::info!(claim_id = %id, tx_hash = %tx_hash, "claim marked paid");
+    Ok(Json(OperatorActionResponse {
+        status: "paid",
+        claim_id: id,
+    }))
+}
+
+async fn admin_page() -> Html<&'static str> {
+    Html(ADMIN_HTML)
+}
+
+const ADMIN_HTML: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pedalshield Treasury Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0A0E1A; --bg-elev: #141A2A; --bg-card: #1A2238;
+    --text: #E6EBFF; --dim: #8993B5; --muted: #5A6485;
+    --accent: #D946EF; --accent-soft: #A855F7;
+    --success: #22D3A1; --warn: #FBBF24; --danger: #F87171;
+    --border: #252D44;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  h1 { margin: 0 0 4px 0; font-size: 28px; letter-spacing: -0.5px; }
+  .sub { color: var(--dim); margin-bottom: 24px; font-size: 14px; }
+  .status-bar {
+    display: flex; gap: 16px; align-items: center;
+    padding: 12px 16px; background: var(--bg-elev);
+    border: 1px solid var(--border); border-radius: 12px;
+    margin-bottom: 24px; font-size: 13px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--success); }
+  .pill {
+    padding: 2px 10px; border-radius: 999px;
+    font-weight: 700; font-size: 11px; letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .pill-pending { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
+  .pill-paid    { background: rgba(34, 211, 161, 0.15); color: var(--success); }
+  .pill-reject  { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
+  .claim {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px 20px; margin-bottom: 14px;
+  }
+  .claim-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .claim-id { font-family: 'SF Mono', Menlo, monospace; font-size: 13px; color: var(--accent-soft); }
+  .row { display: grid; grid-template-columns: 140px 1fr; gap: 8px; margin: 6px 0; font-size: 13px; }
+  .row .k { color: var(--dim); }
+  .row .v { color: var(--text); word-break: break-all; font-family: 'SF Mono', Menlo, monospace; font-size: 12px; }
+  .copy {
+    margin-left: 8px; padding: 1px 8px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--accent-soft);
+    font-size: 10px; cursor: pointer;
+  }
+  .copy:hover { color: var(--accent); }
+  .actions { display: flex; gap: 10px; margin-top: 14px; }
+  button.act {
+    padding: 8px 16px; border-radius: 8px; border: none;
+    font-weight: 700; font-size: 13px; cursor: pointer;
+  }
+  button.pay { background: var(--accent); color: var(--bg); }
+  button.pay:hover { background: var(--accent-soft); }
+  button.reject {
+    background: transparent; color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  button.reject:hover { background: rgba(248,113,113,0.1); }
+  .empty {
+    text-align: center; color: var(--muted);
+    padding: 60px 20px; font-size: 14px;
+  }
+  .ts { color: var(--muted); font-size: 11px; }
+  dialog {
+    background: var(--bg-elev); color: var(--text);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; max-width: 480px; width: 90%;
+  }
+  dialog::backdrop { background: rgba(10,14,26,0.85); }
+  dialog input, dialog textarea {
+    width: 100%; padding: 8px 12px; margin: 8px 0;
+    background: var(--bg-card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: 'SF Mono', Menlo, monospace; font-size: 12px;
+  }
+  dialog .dlg-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+  dialog button { padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: 700; }
+  dialog button.confirm { background: var(--accent); color: var(--bg); border: none; }
+  dialog button.cancel { background: transparent; color: var(--dim); border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+  <h1>Pedalshield Treasury</h1>
+  <div class="sub">Operator console &middot; v0.5.3 manual payout</div>
+
+  <div class="status-bar">
+    <span class="dot"></span>
+    <span id="status">connecting...</span>
+    <span style="flex:1"></span>
+    <span class="ts" id="ts">--</span>
+  </div>
+
+  <div id="claims"></div>
+
+  <dialog id="pay-dlg">
+    <h3 style="margin:0 0 12px 0">Mark claim paid</h3>
+    <div class="ts" id="pay-claim-id"></div>
+    <p style="font-size:13px;color:var(--dim);line-height:20px">
+      After you've sent the payout from Zashi, paste the 64-char transaction
+      id (Zashi shows it in the transaction details). The claim will flip to
+      <b>paid</b> with that hash recorded.
+    </p>
+    <input id="pay-txhash" placeholder="64-char hex tx hash" maxlength="64">
+    <div class="dlg-actions">
+      <button class="cancel" onclick="document.getElementById('pay-dlg').close()">Cancel</button>
+      <button class="confirm" onclick="confirmPay()">Mark paid</button>
+    </div>
+  </dialog>
+
+  <dialog id="reject-dlg">
+    <h3 style="margin:0 0 12px 0">Reject claim</h3>
+    <div class="ts" id="reject-claim-id"></div>
+    <textarea id="reject-reason" rows="3" placeholder="Reason..."></textarea>
+    <div class="dlg-actions">
+      <button class="cancel" onclick="document.getElementById('reject-dlg').close()">Cancel</button>
+      <button class="confirm" onclick="confirmReject()">Reject</button>
+    </div>
+  </dialog>
+
+<script>
+let currentClaimId = null;
+
+async function tick() {
+  try {
+    const [health, claims] = await Promise.all([
+      fetch('/healthz').then(r => r.json()),
+      fetch('/claims?status=pending').then(r => r.json()),
+    ]);
+    document.getElementById('status').textContent =
+      `backend up · v${health.version} · ${health.pending_claims} pending`;
+    document.getElementById('ts').textContent = new Date().toLocaleTimeString();
+    renderClaims(claims);
+  } catch (e) {
+    document.getElementById('status').textContent = 'backend unreachable: ' + e.message;
+  }
+}
+
+function renderClaims(claims) {
+  const el = document.getElementById('claims');
+  if (!claims || claims.length === 0) {
+    el.innerHTML = '<div class="empty">No pending claims. Take Pedalshield for a ride to queue one.</div>';
+    return;
+  }
+  el.innerHTML = claims.map(c => `
+    <div class="claim">
+      <div class="claim-head">
+        <span class="claim-id">${c.id}</span>
+        <span class="pill pill-pending">pending</span>
+      </div>
+      <div class="row">
+        <span class="k">Distance</span>
+        <span class="v">${(c.distance_meters / 1000).toFixed(2)} km (${c.distance_meters} m)</span>
+      </div>
+      <div class="row">
+        <span class="k">Recipient UA</span>
+        <span class="v">${c.recipient_ua}<button class="copy" onclick="copy('${c.recipient_ua}')">copy</button></span>
+      </div>
+      <div class="row">
+        <span class="k">Submitted</span>
+        <span class="v">${new Date(c.created_at * 1000).toLocaleString()}</span>
+      </div>
+      <div class="actions">
+        <button class="act pay" onclick="openPay('${c.id}')">Mark paid</button>
+        <button class="act reject" onclick="openReject('${c.id}')">Reject</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function copy(text) {
+  navigator.clipboard.writeText(text);
+}
+
+function openPay(id) {
+  currentClaimId = id;
+  document.getElementById('pay-claim-id').textContent = id;
+  document.getElementById('pay-txhash').value = '';
+  document.getElementById('pay-dlg').showModal();
+}
+
+function openReject(id) {
+  currentClaimId = id;
+  document.getElementById('reject-claim-id').textContent = id;
+  document.getElementById('reject-reason').value = '';
+  document.getElementById('reject-dlg').showModal();
+}
+
+async function confirmPay() {
+  const tx = document.getElementById('pay-txhash').value.trim().toLowerCase();
+  if (tx.length !== 64) { alert('tx hash must be 64 hex chars'); return; }
+  const r = await fetch(`/claims/${currentClaimId}/mark-paid`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({tx_hash: tx}),
+  });
+  if (!r.ok) { alert('failed: ' + await r.text()); return; }
+  document.getElementById('pay-dlg').close();
+  tick();
+}
+
+async function confirmReject() {
+  const reason = document.getElementById('reject-reason').value.trim();
+  if (!reason) { alert('reason is required'); return; }
+  const r = await fetch(`/claims/${currentClaimId}/reject`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reason}),
+  });
+  if (!r.ok) { alert('failed: ' + await r.text()); return; }
+  document.getElementById('reject-dlg').close();
+  tick();
+}
+
+tick();
+setInterval(tick, 4000);
+</script>
+</body>
+</html>"#;
+
+async fn reject_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<RejectBody>,
+) -> Result<Json<OperatorActionResponse>, AppError> {
+    if body.reason.is_empty() {
+        return Err(AppError::BadRequest("reason is required".into()));
+    }
+    if body.reason.len() > 500 {
+        return Err(AppError::BadRequest("reason exceeds 500 chars".into()));
+    }
+
+    let updated = {
+        let conn = state.db.lock().unwrap();
+        let row = fetch_claim(&conn, &id)
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+        if row.is_none() {
+            return Err(AppError::NotFound(format!("claim {id} not found")));
+        }
+        reject_claim(&conn, &id, &body.reason)
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?
+    };
+
+    if !updated {
+        return Err(AppError::BadRequest(format!(
+            "claim {id} is not in `pending` state; refusing to overwrite"
+        )));
+    }
+
+    tracing::info!(claim_id = %id, reason = %body.reason, "claim rejected");
+    Ok(Json(OperatorActionResponse {
+        status: "rejected",
+        claim_id: id,
+    }))
+}
+
 // ---------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------
@@ -517,6 +890,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/claim", post(post_claim))
         .route("/claims", get(list_claims_handler))
         .route("/claims/:id", get(get_claim_handler))
+        .route("/claims/:id/mark-paid", post(mark_paid_handler))
+        .route("/claims/:id/reject", post(reject_handler))
+        .route("/admin", get(admin_page))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

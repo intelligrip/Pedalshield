@@ -24,12 +24,16 @@ frost-rerandomized = "3"
 # Version pins are wildcards: zcash crate versions move together with
 # librustzcash releases. Cargo picks the latest compatible release.
 # Pin to exact versions once v0.5 stabilises on mainnet.
-orchard          = "*"
-zcash_primitives = "*"
-zcash_address    = "*"
-zcash_keys       = { version = "*", features = ["orchard"] }
-zcash_protocol   = "*"
-zip32            = "*"
+# All zcash crates pinned to published versions that we KNOW work
+# (verified by treasury_keygen + treasury_balance compiling + running
+# end-to-end on mainnet at v0.5.2). These are the same versions that
+# scan blocks and IVK-decrypt notes successfully today.
+orchard          = "0.13"
+zcash_primitives = "0.27"
+zcash_address    = "0.11"
+zcash_keys       = { version = "0.13", features = ["orchard"] }
+zcash_protocol   = "0.8"
+zip32            = "0.2"
 
 # Seed phrase generation for the treasury backup. Standard BIP-39
 # wordlist + entropy. `tiny-bip39` is the maintained fork.
@@ -51,7 +55,7 @@ tower               = "0.4"
 tower-http          = { version = "0.5", features = ["trace", "cors"] }
 tracing             = "0.1"
 tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
-rusqlite            = { version = "0.31", features = ["bundled"] }
+rusqlite            = { version = "0.37", features = ["bundled"] }
 uuid                = { version = "1", features = ["v4"] }
 
 # Lightwalletd gRPC client (used by `treasury_ping` and later by the
@@ -66,12 +70,17 @@ tokio-stream        = "0.1"
 # directly so it's listed explicitly for clarity.
 zcash_note_encryption = "*"
 
-# ECC wallet machinery for v0.5.3 spend construction. Provides the
-# commitment-tree maintenance, note-witness tracking, and tx-build
-# pipeline we'd otherwise have to write ourselves (weeks of work,
-# easy to get wrong). Heavy compile - first build is 10-15 minutes.
-zcash_client_backend = { version = "*", features = ["orchard", "transparent-inputs"] }
-zcash_client_sqlite  = { version = "*", features = ["orchard"] }
+# zcash_client_backend / zcash_client_sqlite are NOT used. The
+# published crates.io pair has inconsistent APIs and the librustzcash
+# main branch is mid-refactor with internal compile errors. Instead we
+# hand-roll Orchard spend construction on `orchard` + `bridgetree`.
+
+# Incremental Merkle tree that lets us append commitments as we sync,
+# mark our notes' positions, and compute witnesses on demand. orchard
+# 0.13 pulls incrementalmerkletree 0.8 directly (BridgeTree was folded
+# into the crate in 0.8; the separate `bridgetree` crate is no longer
+# needed). Pin to match orchard exactly so trait impls unify.
+incrementalmerkletree = { version = "0.8", features = ["legacy-api"] }
 
 # CLI subcommand parsing for the treasury_wallet binary.
 clap = { version = "4", features = ["derive"] }

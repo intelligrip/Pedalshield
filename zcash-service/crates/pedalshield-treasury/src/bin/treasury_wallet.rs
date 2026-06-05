@@ -94,11 +94,7 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     match cli.cmd {
         Cmd::Info => cmd_info(&cli),
-        Cmd::Init => {
-            println!("init: NOT YET IMPLEMENTED (v0.5.3a)");
-            println!("    will create {} and import the treasury account.", cli.wallet_db.display());
-            Ok(())
-        }
+        Cmd::Init => cmd_init(&cli),
         Cmd::Sync => {
             println!("sync: NOT YET IMPLEMENTED (v0.5.3b)");
             Ok(())
@@ -115,17 +111,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+fn cmd_init(_cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    println!("init: deferred to v1.1");
+    println!();
+    println!("zcash_client_sqlite 0.20.2 + zcash_client_backend 0.22 declare");
+    println!("they want each other but don't compile together cleanly as of");
+    println!("the hackathon window. The autonomous spend path is parked");
+    println!("until the librustzcash ecosystem ships a stable pair.");
+    println!();
+    println!("For v0.5.3 we use the manual-operator payout flow:");
+    println!("  1. Phone POSTs claims to the backend");
+    println!("  2. Operator gets a queue of pending claims");
+    println!("  3. Operator sends each payout from Zashi");
+    println!("  4. Operator marks claim paid with the real tx hash");
+    Ok(())
+}
+
 fn cmd_info(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
-    // These imports exist purely to confirm at compile time that the
-    // crate features we picked are wired correctly. They're tiny smoke
-    // tests of "is the API surface we need actually present".
-    use zcash_client_backend::data_api::WalletRead as _;
-    use zcash_client_sqlite::WalletDb as _;
-    use zcash_protocol::consensus::Network;
-
-    let net = Network::MainNetwork;
-    let _ = &net;
-
     println!("treasury_wallet v{}", env!("CARGO_PKG_VERSION"));
     println!();
     println!("Paths");
@@ -139,9 +141,12 @@ fn cmd_info(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     println!("  network:             mainnet");
     println!();
     println!("Build");
-    println!("  zcash_client_backend: linked (orchard + transparent-inputs)");
-    println!("  zcash_client_sqlite:  linked (orchard)");
+    println!("  mode: v0.5.3 manual-operator (wallet crates parked for v1.1)");
     println!();
-    println!("Next: implement `init` to create WalletDb + import spending key.");
+    println!("Operator workflow:");
+    println!("  1. Phone POSTs claims to the backend (port 8787)");
+    println!("  2. Run `treasury_wallet pending` to see queued claims");
+    println!("  3. Send payout from Zashi to the recipient UA");
+    println!("  4. Run `treasury_wallet mark-paid <claim_id> <tx_hash>`");
     Ok(())
 }
