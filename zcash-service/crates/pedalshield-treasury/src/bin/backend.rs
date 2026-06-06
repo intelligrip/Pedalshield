@@ -71,6 +71,9 @@ struct AppState {
     /// Serializes payouts so two claims never try to spend the same note
     /// before the first has been mined.
     payout_lock: Arc<tokio::sync::Mutex<()>>,
+    /// When true, `POST /claim` fires the payout automatically (fully
+    /// hands-off). When false, payouts only run via `POST /approve`.
+    auto_payout: bool,
 }
 
 // ---------------------------------------------------------------------
@@ -549,10 +552,29 @@ async fn post_claim(
         meters = row.distance_meters,
         "claim accepted"
     );
+
+    // Fully autonomous path: fire the payout in the background and ACK
+    // immediately (building + proving + broadcasting takes a few seconds).
+    // The claim flips pending -> paying -> paid as it settles; poll
+    // GET /claims/{id} for the txid.
+    if state.auto_payout {
+        let st = state.clone();
+        let pid = id.clone();
+        tokio::spawn(async move {
+            match run_payout(st, pid.clone()).await {
+                Ok(o) => tracing::info!(
+                    claim_id = %pid, txid = %o.txid, amount = o.amount_zat,
+                    "auto-payout complete"
+                ),
+                Err(e) => tracing::warn!(claim_id = %pid, "auto-payout failed: {}", e.msg(&pid)),
+            }
+        });
+    }
+
     Ok((
         StatusCode::ACCEPTED,
         Json(ClaimAcceptResponse {
-            status: "queued",
+            status: if state.auto_payout { "paying" } else { "queued" },
             claim_id: id,
         }),
     ))
@@ -911,72 +933,85 @@ fn compute_payout(distance_meters: u64, zat_per_km: u64, max_payout_zat: u64) ->
     raw.min(max_payout_zat)
 }
 
-fn load_spending_key(
-    state: &AppState,
-) -> Result<orchard::keys::SpendingKey, AppError> {
+fn load_spending_key(state: &AppState) -> Result<orchard::keys::SpendingKey, String> {
     let path = state
         .spending_key_path
         .as_ref()
-        .ok_or_else(|| AppError::Internal("treasury spending key not configured".into()))?;
-    let bytes = std::fs::read(path)
-        .map_err(|e| AppError::Internal(format!("reading spending key: {e}")))?;
+        .ok_or("treasury spending key not configured")?;
+    let bytes = std::fs::read(path).map_err(|e| format!("reading spending key: {e}"))?;
     if bytes.len() != 32 {
-        return Err(AppError::Internal(format!(
-            "spending key must be 32 bytes, got {}",
-            bytes.len()
-        )));
+        return Err(format!("spending key must be 32 bytes, got {}", bytes.len()));
     }
     let mut a = [0u8; 32];
     a.copy_from_slice(&bytes);
     orchard::keys::SpendingKey::from_bytes(a)
         .into_option()
-        .ok_or_else(|| AppError::Internal("spending key failed validation".into()))
+        .ok_or_else(|| "spending key failed validation".to_string())
 }
 
-/// Autonomously construct + broadcast a shielded Orchard payout for a
-/// pending claim. No operator in the loop: validate -> reserve (paying) ->
-/// build+prove+sign+broadcast -> mark paid. Payouts are serialized so two
-/// claims can't spend the same note.
-async fn approve_handler(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<PayoutResponse>, AppError> {
-    // 1. Load the claim and compute the payout amount.
+/// Typed payout failure so the HTTP endpoint and the auto-trigger task
+/// can each react appropriately.
+enum PayoutError {
+    NotFound,
+    NotPending,
+    ZeroAmount,
+    Internal(String),
+}
+
+impl PayoutError {
+    fn msg(&self, id: &str) -> String {
+        match self {
+            PayoutError::NotFound => format!("claim {id} not found"),
+            PayoutError::NotPending => {
+                format!("claim {id} is not in `pending` state (already paid/paying/rejected)")
+            }
+            PayoutError::ZeroAmount => "computed payout is zero for this distance".into(),
+            PayoutError::Internal(m) => m.clone(),
+        }
+    }
+}
+
+struct PayoutOutcome {
+    amount_zat: u64,
+    txid: String,
+}
+
+/// Core autonomous payout, shared by the auto-trigger on claim submission
+/// and the manual `/approve` endpoint. Reserve (pending -> paying), then
+/// build + prove + sign + broadcast a shielded Orchard spend and mark
+/// paid; revert to pending on any failure. Serialized via `payout_lock`
+/// so two claims never select the same note.
+async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, PayoutError> {
     let claim = {
         let conn = state.db.lock().unwrap();
-        fetch_claim(&conn, &id).map_err(|e| AppError::Internal(format!("db: {e}")))?
+        fetch_claim(&conn, &id).map_err(|e| PayoutError::Internal(format!("db: {e}")))?
     }
-    .ok_or_else(|| AppError::NotFound(format!("claim {id} not found")))?;
+    .ok_or(PayoutError::NotFound)?;
 
     let amount_zat = compute_payout(claim.distance_meters, state.zat_per_km, state.max_payout_zat);
     if amount_zat == 0 {
-        return Err(AppError::BadRequest(
-            "computed payout is zero for this distance".into(),
-        ));
+        return Err(PayoutError::ZeroAmount);
     }
 
-    // 2. Reserve the claim (pending -> paying). Atomic; wins the race once.
+    // Atomic reserve; only the winner proceeds (double-pay guard).
     let reserved = {
         let conn = state.db.lock().unwrap();
-        begin_paying(&conn, &id).map_err(|e| AppError::Internal(format!("db: {e}")))?
+        begin_paying(&conn, &id).map_err(|e| PayoutError::Internal(format!("db: {e}")))?
     };
     if !reserved {
-        return Err(AppError::BadRequest(format!(
-            "claim {id} is not in `pending` state (already paid/paying/rejected)"
-        )));
+        return Err(PayoutError::NotPending);
     }
 
-    // 3. Load the hot key and build+broadcast the payout, serialized so
-    //    concurrent payouts never select the same note.
     let sk = match load_spending_key(&state) {
         Ok(sk) => sk,
         Err(e) => {
             let conn = state.db.lock().unwrap();
             let _ = revert_to_pending(&conn, &id, "spending key unavailable");
-            return Err(e);
+            return Err(PayoutError::Internal(e));
         }
     };
 
+    // Serialize payouts so concurrent claims can't pick the same note.
     let result = {
         let _guard = state.payout_lock.lock().await;
         pedalshield_treasury::spend::spender::pay(
@@ -990,36 +1025,55 @@ async fn approve_handler(
         .await
     };
 
-    // 4. Settle: mark paid on success, revert to pending on any failure.
     match result {
         Ok(r) => match r.broadcast {
             Some((0, _)) => {
                 let conn = state.db.lock().unwrap();
                 set_paid_from_paying(&conn, &id, &r.txid_hex)
-                    .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+                    .map_err(|e| PayoutError::Internal(format!("db: {e}")))?;
                 tracing::info!(claim_id = %id, txid = %r.txid_hex, amount = amount_zat, "claim paid autonomously");
-                Ok(Json(PayoutResponse {
-                    status: "paid",
-                    claim_id: id,
-                    amount_zatoshi: amount_zat,
-                    txid: r.txid_hex,
-                }))
+                Ok(PayoutOutcome { amount_zat, txid: r.txid_hex })
             }
             Some((code, msg)) => {
                 let conn = state.db.lock().unwrap();
                 let _ = revert_to_pending(&conn, &id, &format!("broadcast rejected ({code}): {msg}"));
-                Err(AppError::Internal(format!("broadcast rejected ({code}): {msg}")))
+                Err(PayoutError::Internal(format!("broadcast rejected ({code}): {msg}")))
             }
             None => {
                 let conn = state.db.lock().unwrap();
                 let _ = revert_to_pending(&conn, &id, "not broadcast");
-                Err(AppError::Internal("payout was not broadcast".into()))
+                Err(PayoutError::Internal("payout was not broadcast".into()))
             }
         },
         Err(e) => {
             let conn = state.db.lock().unwrap();
             let _ = revert_to_pending(&conn, &id, &format!("payout error: {e}"));
-            Err(AppError::Internal(format!("payout failed: {e}")))
+            Err(PayoutError::Internal(format!("payout failed: {e}")))
+        }
+    }
+}
+
+/// Manual trigger / retry for a payout. The autonomous path fires
+/// automatically on claim submission; this endpoint stays for diagnostics
+/// and to retry a claim that reverted to `pending` after a transient error.
+async fn approve_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<PayoutResponse>, AppError> {
+    match run_payout(state, id.clone()).await {
+        Ok(o) => Ok(Json(PayoutResponse {
+            status: "paid",
+            claim_id: id,
+            amount_zatoshi: o.amount_zat,
+            txid: o.txid,
+        })),
+        Err(e) => {
+            let m = e.msg(&id);
+            Err(match e {
+                PayoutError::NotFound => AppError::NotFound(m),
+                PayoutError::NotPending | PayoutError::ZeroAmount => AppError::BadRequest(m),
+                PayoutError::Internal(_) => AppError::Internal(m),
+            })
         }
     }
 }
@@ -1073,6 +1127,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(500_000); // 0.005 ZEC cap per claim
+    // Auto-payout defaults ON (fully hands-off). Set PEDALSHIELD_AUTO_PAYOUT=0
+    // to require the manual /approve endpoint instead.
+    let auto_payout = env::var("PEDALSHIELD_AUTO_PAYOUT")
+        .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
+        .unwrap_or(true);
 
     let conn = open_db(&db_path)?;
     let state = AppState {
@@ -1084,6 +1143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         zat_per_km,
         max_payout_zat,
         payout_lock: Arc::new(tokio::sync::Mutex::new(())),
+        auto_payout,
     };
 
     let app = Router::new()
