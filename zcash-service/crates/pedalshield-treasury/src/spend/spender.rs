@@ -1,20 +1,20 @@
 //! Phase 3 + 4 — Orchard spend construction and broadcast.
 //!
-//! Given the treasury spending key, a recipient Unified Address, and a
-//! block range, this:
-//!   1. seeds the Orchard tree from `GetTreeState(from - 1)`,
-//!   2. scans forward to `to` (the anchor height), rediscovering our note
-//!      and computing its real witness (auth path + consensus anchor),
-//!   3. drives `zcash_primitives` v5 `TransactionBuilder` to add the
-//!      Orchard spend + output, prove the bundle, compute the SIGHASH,
-//!      apply the spend-authorization signature with the hot
-//!      `SpendAuthorizingKey`, attach the binding signature, and
-//!      serialize a complete v5 transaction,
-//!   4. optionally broadcasts it via `SendTransaction`.
+//! `pay()` is the autonomous payout primitive:
+//!   1. seeds the Orchard tree from `GetTreeState(birthday - 1)`,
+//!   2. scans to the chain tip, rediscovering treasury notes, their
+//!      witnesses, and every on-chain nullifier,
+//!   3. selects an UNSPENT note (nullifier not seen on chain) large
+//!      enough to cover amount + fee,
+//!   4. drives `zcash_primitives` v5 `TransactionBuilder` to add the
+//!      Orchard spend, the recipient output, and a change output back to
+//!      an internal treasury address, prove, SIGHASH, sign with the hot
+//!      `SpendAuthorizingKey`, attach the binding signature, serialize,
+//!   5. optionally broadcasts via `SendTransaction`.
 //!
-//! The transaction is fully shielded: one Orchard spend, one Orchard
-//! output, no transparent or Sapling components. The Sapling mock provers
-//! satisfy the builder's generic bounds but are never invoked.
+//! Fully shielded: one Orchard spend, one or two Orchard outputs, no
+//! transparent or Sapling components (the Sapling mock provers satisfy
+//! the builder's generic bounds but are never invoked).
 
 use std::time::Duration;
 
@@ -44,7 +44,8 @@ use crate::spend::tree::OrchardTree;
 /// Outcome of building (and optionally broadcasting) a spend.
 pub struct SpendResult {
     pub note_value_zat: u64,
-    pub output_value_zat: u64,
+    pub recipient_value_zat: u64,
+    pub change_value_zat: u64,
     pub fee_zat: u64,
     pub position: u64,
     pub anchor_hex: String,
@@ -55,25 +56,29 @@ pub struct SpendResult {
     pub broadcast: Option<(i32, String)>,
 }
 
-/// Build a complete v5 Orchard transaction spending the treasury note
-/// found in `[from_height, to_height]` and paying `note - fee` to
-/// `recipient_ua`. If `to_height == 0`, the chain tip is used (so the
-/// anchor is recent enough to be accepted by consensus). Broadcasts when
+/// Pay `amount_zat` to `recipient_ua` from an unspent treasury note,
+/// returning change to an internal treasury address. If `amount_zat == 0`
+/// the entire selected note (minus fee) is swept to the recipient with no
+/// change output. Scans from `birthday` to the chain tip. Broadcasts when
 /// `broadcast` is true.
-pub async fn build_transfer(
+pub async fn pay(
     endpoint: &str,
     sk: &SpendingKey,
     recipient_ua: &str,
-    from_height: u64,
-    to_height: u64,
+    amount_zat: u64,
+    birthday: u64,
     broadcast: bool,
 ) -> Result<SpendResult, Box<dyn std::error::Error>> {
     // --- keys ---
     let fvk = FullViewingKey::from(sk);
     let ivk: IncomingViewingKey = fvk.to_ivk(Scope::External);
     let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
-    let ovk: OutgoingViewingKey = fvk.to_ovk(Scope::External);
+    let ovk_ext: OutgoingViewingKey = fvk.to_ovk(Scope::External);
+    let ovk_int: OutgoingViewingKey = fvk.to_ovk(Scope::Internal);
     let sak = SpendAuthorizingKey::from(sk);
+
+    // Change goes to our own internal (change) Orchard address.
+    let change_addr = fvk.address_at(0u32, Scope::Internal);
 
     // --- recipient ---
     let recipient = match Address::decode(&MainNetwork, recipient_ua) {
@@ -98,10 +103,9 @@ pub async fn build_transfer(
         .await?
         .into_inner()
         .height;
-    let to_height = if to_height == 0 { tip } else { to_height };
 
-    // --- seed from the frontier just before our note, then scan forward ---
-    let seed_height = from_height.saturating_sub(1);
+    // --- seed from the frontier just before the birthday, scan to tip ---
+    let seed_height = birthday.saturating_sub(1);
     let ts = client
         .get_tree_state(proto::BlockId { height: seed_height, hash: vec![] })
         .await?
@@ -109,8 +113,8 @@ pub async fn build_transfer(
     let mut tree = OrchardTree::from_tree_state(&ts.orchard_tree)?;
 
     let range = proto::BlockRange {
-        start: Some(proto::BlockId { height: from_height, hash: vec![] }),
-        end: Some(proto::BlockId { height: to_height, hash: vec![] }),
+        start: Some(proto::BlockId { height: birthday, hash: vec![] }),
+        end: Some(proto::BlockId { height: tip, hash: vec![] }),
     };
     let mut stream = client.get_block_range(range).await?.into_inner();
     let mut found: Vec<FoundNote> = Vec::new();
@@ -120,9 +124,19 @@ pub async fn build_transfer(
         process_block(&block, &prepared_ivk, &mut tree, &mut found, &mut progress)?;
     }
 
-    let note_meta = found
-        .first()
-        .ok_or("no treasury note found in the given range")?;
+    // --- select the largest UNSPENT note ---
+    let mut best: Option<&FoundNote> = None;
+    for fnote in &found {
+        let nf = fnote.note.nullifier(&fvk).to_bytes();
+        if progress.all_nullifiers.contains(&nf) {
+            continue; // already spent on chain
+        }
+        match best {
+            Some(b) if b.value_zatoshi >= fnote.value_zatoshi => {}
+            _ => best = Some(fnote),
+        }
+    }
+    let note_meta = best.ok_or("no unspent treasury note found in range")?;
     let note = note_meta.note;
     let note_value_zat = note_meta.value_zatoshi;
     let position = note_meta.position;
@@ -141,53 +155,77 @@ pub async fn build_transfer(
     let anchor_hex: String = w.anchor.to_bytes().iter().map(|b| format!("{b:02x}")).collect();
 
     let target_height = BlockHeight::from_u32(tip as u32);
-
-    // --- fee probe: action counts (hence the ZIP-317 fee) are fixed by
-    //     the number of spends/outputs, not their values ---
     let fee_rule = FeeRule::standard();
+    let cfg = || BuildConfig::Standard { sapling_anchor: None, orchard_anchor: Some(anchor) };
+
+    // --- fee probe (action count, hence fee, is independent of values) ---
+    let has_change = amount_zat > 0;
     let fee_zat: u64 = {
-        let mut probe = Builder::new(
-            MainNetwork,
-            target_height,
-            BuildConfig::Standard { sapling_anchor: None, orchard_anchor: Some(anchor) },
-        );
+        let mut probe = Builder::new(MainNetwork, target_height, cfg());
         probe
             .add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path.clone())
             .map_err(|e| format!("probe add_orchard_spend: {e:?}"))?;
+        let probe_recipient_val = if amount_zat == 0 { note_value_zat } else { amount_zat };
         probe
             .add_orchard_output::<FeeError>(
-                Some(ovk.clone()),
+                Some(ovk_ext.clone()),
                 recipient.clone(),
-                Zatoshis::from_u64(note_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
+                Zatoshis::from_u64(probe_recipient_val).map_err(|e| format!("zatoshis: {e:?}"))?,
                 MemoBytes::empty(),
             )
             .map_err(|e| format!("probe add_orchard_output: {e:?}"))?;
-        let fee = probe.get_fee(&fee_rule).map_err(|e| format!("get_fee: {e:?}"))?;
-        u64::from(fee)
+        if has_change {
+            probe
+                .add_orchard_output::<FeeError>(
+                    Some(ovk_int.clone()),
+                    change_addr,
+                    Zatoshis::from_u64(1).unwrap(),
+                    MemoBytes::empty(),
+                )
+                .map_err(|e| format!("probe add change: {e:?}"))?;
+        }
+        u64::from(probe.get_fee(&fee_rule).map_err(|e| format!("get_fee: {e:?}"))?)
     };
 
-    if note_value_zat <= fee_zat {
-        return Err(format!("note value {note_value_zat} <= fee {fee_zat}; nothing to send").into());
-    }
-    let output_value_zat = note_value_zat - fee_zat;
+    // --- value distribution ---
+    let (recipient_value_zat, change_value_zat) = if amount_zat == 0 {
+        if note_value_zat <= fee_zat {
+            return Err(format!("note {note_value_zat} <= fee {fee_zat}").into());
+        }
+        (note_value_zat - fee_zat, 0)
+    } else {
+        if note_value_zat < amount_zat + fee_zat {
+            return Err(format!(
+                "note {note_value_zat} < amount {amount_zat} + fee {fee_zat}"
+            )
+            .into());
+        }
+        (amount_zat, note_value_zat - amount_zat - fee_zat)
+    };
 
     // --- real build: prove, sighash, sign, binding sig, serialize ---
-    let mut builder = Builder::new(
-        MainNetwork,
-        target_height,
-        BuildConfig::Standard { sapling_anchor: None, orchard_anchor: Some(anchor) },
-    );
+    let mut builder = Builder::new(MainNetwork, target_height, cfg());
     builder
         .add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path)
         .map_err(|e| format!("add_orchard_spend: {e:?}"))?;
     builder
         .add_orchard_output::<FeeError>(
-            Some(ovk),
+            Some(ovk_ext),
             recipient,
-            Zatoshis::from_u64(output_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
+            Zatoshis::from_u64(recipient_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
             MemoBytes::empty(),
         )
         .map_err(|e| format!("add_orchard_output: {e:?}"))?;
+    if change_value_zat > 0 {
+        builder
+            .add_orchard_output::<FeeError>(
+                Some(ovk_int),
+                change_addr,
+                Zatoshis::from_u64(change_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
+                MemoBytes::empty(),
+            )
+            .map_err(|e| format!("add change output: {e:?}"))?;
+    }
 
     let transparent_signing_set = TransparentSigningSet::new();
     let result = builder
@@ -219,7 +257,8 @@ pub async fn build_transfer(
 
     Ok(SpendResult {
         note_value_zat,
-        output_value_zat,
+        recipient_value_zat,
+        change_value_zat,
         fee_zat,
         position,
         anchor_hex,

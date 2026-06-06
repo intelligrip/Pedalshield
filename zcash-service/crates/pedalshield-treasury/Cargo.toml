@@ -53,7 +53,7 @@ hex    = "0.4"
 # binary; not pulled in by the library's other consumers because cargo
 # bin-targets only compile their direct deps + the lib's deps.
 axum                = "0.7"
-tokio               = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio               = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
 tower               = "0.4"
 tower-http          = { version = "0.5", features = ["trace", "cors"] }
 tracing             = "0.1"

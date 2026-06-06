@@ -370,13 +370,13 @@ fn cmd_send(
 async fn send_async(
     cli: &Cli,
     to: String,
-    _amount_zec: f64,
+    amount_zec: f64,
     dry_run: bool,
     from_block: u64,
-    to_block: u64,
+    _to_block: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use orchard::keys::SpendingKey;
-    use pedalshield_treasury::spend::spender::build_transfer;
+    use pedalshield_treasury::spend::spender::pay;
 
     let sk_bytes = std::fs::read(&cli.spending_key_file)
         .map_err(|e| format!("reading {}: {e}", cli.spending_key_file.display()))?;
@@ -389,35 +389,46 @@ async fn send_async(
         .into_option()
         .ok_or("spending key bytes failed validation")?;
 
+    let amount_zat = (amount_zec * 1e8).round() as u64;
     let mode = if dry_run {
         "DRY-RUN (build + prove + sign, no broadcast)"
     } else {
         "BROADCAST"
     };
-    let to_label = if to_block == 0 { "tip".to_string() } else { to_block.to_string() };
+    let amt_label = if amount_zat == 0 {
+        "entire note minus fee".to_string()
+    } else {
+        format!("{amount_zat} zat ({amount_zec:.8} ZEC)")
+    };
     println!("Orchard spend -> {to}");
     println!("  mode: {mode}");
-    println!("  scanning [{from_block} .. {to_label}], building + proving (a few seconds)...\n");
+    println!("  amount: {amt_label}");
+    println!("  scanning from birthday {from_block} to tip, selecting an unspent note, proving...\n");
 
-    let r = build_transfer(&cli.endpoint, &sk, &to, from_block, to_block, !dry_run).await?;
+    let r = pay(&cli.endpoint, &sk, &to, amount_zat, from_block, !dry_run).await?;
 
     println!("SIGNED v5 TRANSACTION BUILT");
     println!(
-        "  note value:    {} zat ({:.8} ZEC)",
+        "  note value:      {} zat ({:.8} ZEC)",
         r.note_value_zat,
         r.note_value_zat as f64 / 1e8
     );
     println!(
-        "  output value:  {} zat ({:.8} ZEC)",
-        r.output_value_zat,
-        r.output_value_zat as f64 / 1e8
+        "  recipient value: {} zat ({:.8} ZEC)",
+        r.recipient_value_zat,
+        r.recipient_value_zat as f64 / 1e8
     );
-    println!("  fee (zip317):  {} zat", r.fee_zat);
-    println!("  note position: {}", r.position);
-    println!("  anchor:        {}", r.anchor_hex);
-    println!("  target height: {}", r.target_height);
-    println!("  tx size:       {} bytes", r.tx_size);
-    println!("  txid:          {}", r.txid_hex);
+    println!(
+        "  change value:    {} zat ({:.8} ZEC)",
+        r.change_value_zat,
+        r.change_value_zat as f64 / 1e8
+    );
+    println!("  fee (zip317):    {} zat", r.fee_zat);
+    println!("  note position:   {}", r.position);
+    println!("  anchor:          {}", r.anchor_hex);
+    println!("  target height:   {}", r.target_height);
+    println!("  tx size:         {} bytes", r.tx_size);
+    println!("  txid:            {}", r.txid_hex);
 
     match r.broadcast {
         None => {

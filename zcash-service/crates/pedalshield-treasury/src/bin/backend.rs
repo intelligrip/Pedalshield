@@ -60,6 +60,17 @@ struct AppState {
     db: SharedDb,
     treasury_ua: String,
     spending_key_path: Option<PathBuf>,
+    /// lightwalletd gRPC endpoint used for autonomous payouts.
+    lightwalletd: String,
+    /// Treasury birthday height (deposit block) - scan start for payouts.
+    birthday: u64,
+    /// Payout rate: zatoshi per kilometre ridden.
+    zat_per_km: u64,
+    /// Hard cap on any single payout, in zatoshi.
+    max_payout_zat: u64,
+    /// Serializes payouts so two claims never try to spend the same note
+    /// before the first has been mined.
+    payout_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 // ---------------------------------------------------------------------
@@ -372,6 +383,46 @@ fn reject_claim(
         params![reason, now, id],
     )?;
     Ok(n > 0)
+}
+
+/// Atomically transition a claim from `pending` to `paying`. Returns true
+/// only if this call won the race; concurrent or duplicate approve
+/// requests get false and must not pay. This is the double-pay guard.
+fn begin_paying(conn: &Connection, id: &str) -> Result<bool, rusqlite::Error> {
+    let now = now_secs() as i64;
+    let n = conn.execute(
+        "UPDATE claims SET status = 'paying', updated_at = ?1
+         WHERE id = ?2 AND status = 'pending'",
+        params![now, id],
+    )?;
+    Ok(n > 0)
+}
+
+/// Mark a claim paid (only valid from the `paying` state) and record txid.
+fn set_paid_from_paying(
+    conn: &Connection,
+    id: &str,
+    txid: &str,
+) -> Result<bool, rusqlite::Error> {
+    let now = now_secs() as i64;
+    let n = conn.execute(
+        "UPDATE claims SET status = 'paid', payout_txid = ?1, updated_at = ?2
+         WHERE id = ?3 AND status = 'paying'",
+        params![txid, now, id],
+    )?;
+    Ok(n > 0)
+}
+
+/// Revert a `paying` claim back to `pending` (so it can be retried) and
+/// record the failure reason.
+fn revert_to_pending(conn: &Connection, id: &str, reason: &str) -> Result<(), rusqlite::Error> {
+    let now = now_secs() as i64;
+    conn.execute(
+        "UPDATE claims SET status = 'pending', rejection_reason = ?1, updated_at = ?2
+         WHERE id = ?3 AND status = 'paying'",
+        params![reason, now, id],
+    )?;
+    Ok(())
 }
 
 fn count_pending(conn: &Connection) -> Result<u64, rusqlite::Error> {
@@ -843,6 +894,137 @@ async fn reject_handler(
 }
 
 // ---------------------------------------------------------------------
+// Autonomous payout
+// ---------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+struct PayoutResponse {
+    status: &'static str,
+    claim_id: String,
+    amount_zatoshi: u64,
+    txid: String,
+}
+
+/// Distance -> payout amount, in zatoshi, clamped to the configured cap.
+fn compute_payout(distance_meters: u64, zat_per_km: u64, max_payout_zat: u64) -> u64 {
+    let raw = (distance_meters.saturating_mul(zat_per_km)) / 1000;
+    raw.min(max_payout_zat)
+}
+
+fn load_spending_key(
+    state: &AppState,
+) -> Result<orchard::keys::SpendingKey, AppError> {
+    let path = state
+        .spending_key_path
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("treasury spending key not configured".into()))?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| AppError::Internal(format!("reading spending key: {e}")))?;
+    if bytes.len() != 32 {
+        return Err(AppError::Internal(format!(
+            "spending key must be 32 bytes, got {}",
+            bytes.len()
+        )));
+    }
+    let mut a = [0u8; 32];
+    a.copy_from_slice(&bytes);
+    orchard::keys::SpendingKey::from_bytes(a)
+        .into_option()
+        .ok_or_else(|| AppError::Internal("spending key failed validation".into()))
+}
+
+/// Autonomously construct + broadcast a shielded Orchard payout for a
+/// pending claim. No operator in the loop: validate -> reserve (paying) ->
+/// build+prove+sign+broadcast -> mark paid. Payouts are serialized so two
+/// claims can't spend the same note.
+async fn approve_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<PayoutResponse>, AppError> {
+    // 1. Load the claim and compute the payout amount.
+    let claim = {
+        let conn = state.db.lock().unwrap();
+        fetch_claim(&conn, &id).map_err(|e| AppError::Internal(format!("db: {e}")))?
+    }
+    .ok_or_else(|| AppError::NotFound(format!("claim {id} not found")))?;
+
+    let amount_zat = compute_payout(claim.distance_meters, state.zat_per_km, state.max_payout_zat);
+    if amount_zat == 0 {
+        return Err(AppError::BadRequest(
+            "computed payout is zero for this distance".into(),
+        ));
+    }
+
+    // 2. Reserve the claim (pending -> paying). Atomic; wins the race once.
+    let reserved = {
+        let conn = state.db.lock().unwrap();
+        begin_paying(&conn, &id).map_err(|e| AppError::Internal(format!("db: {e}")))?
+    };
+    if !reserved {
+        return Err(AppError::BadRequest(format!(
+            "claim {id} is not in `pending` state (already paid/paying/rejected)"
+        )));
+    }
+
+    // 3. Load the hot key and build+broadcast the payout, serialized so
+    //    concurrent payouts never select the same note.
+    let sk = match load_spending_key(&state) {
+        Ok(sk) => sk,
+        Err(e) => {
+            let conn = state.db.lock().unwrap();
+            let _ = revert_to_pending(&conn, &id, "spending key unavailable");
+            return Err(e);
+        }
+    };
+
+    let result = {
+        let _guard = state.payout_lock.lock().await;
+        pedalshield_treasury::spend::spender::pay(
+            &state.lightwalletd,
+            &sk,
+            &claim.recipient_ua,
+            amount_zat,
+            state.birthday,
+            true, // broadcast
+        )
+        .await
+    };
+
+    // 4. Settle: mark paid on success, revert to pending on any failure.
+    match result {
+        Ok(r) => match r.broadcast {
+            Some((0, _)) => {
+                let conn = state.db.lock().unwrap();
+                set_paid_from_paying(&conn, &id, &r.txid_hex)
+                    .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+                tracing::info!(claim_id = %id, txid = %r.txid_hex, amount = amount_zat, "claim paid autonomously");
+                Ok(Json(PayoutResponse {
+                    status: "paid",
+                    claim_id: id,
+                    amount_zatoshi: amount_zat,
+                    txid: r.txid_hex,
+                }))
+            }
+            Some((code, msg)) => {
+                let conn = state.db.lock().unwrap();
+                let _ = revert_to_pending(&conn, &id, &format!("broadcast rejected ({code}): {msg}"));
+                Err(AppError::Internal(format!("broadcast rejected ({code}): {msg}")))
+            }
+            None => {
+                let conn = state.db.lock().unwrap();
+                let _ = revert_to_pending(&conn, &id, "not broadcast");
+                Err(AppError::Internal("payout was not broadcast".into()))
+            }
+        },
+        Err(e) => {
+            let conn = state.db.lock().unwrap();
+            let _ = revert_to_pending(&conn, &id, &format!("payout error: {e}"));
+            Err(AppError::Internal(format!("payout failed: {e}")))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------
 
@@ -877,11 +1059,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             p.exists().then_some(p)
         });
 
+    let lightwalletd = env::var("PEDALSHIELD_LIGHTWALLETD")
+        .unwrap_or_else(|_| "https://zec.rocks:443".into());
+    let birthday: u64 = env::var("PEDALSHIELD_BIRTHDAY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3_361_149);
+    let zat_per_km: u64 = env::var("PEDALSHIELD_ZAT_PER_KM")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20_000); // 0.0002 ZEC per km
+    let max_payout_zat: u64 = env::var("PEDALSHIELD_MAX_PAYOUT_ZAT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(500_000); // 0.005 ZEC cap per claim
+
     let conn = open_db(&db_path)?;
     let state = AppState {
         db: Arc::new(Mutex::new(conn)),
         treasury_ua: treasury_ua.clone(),
         spending_key_path,
+        lightwalletd,
+        birthday,
+        zat_per_km,
+        max_payout_zat,
+        payout_lock: Arc::new(tokio::sync::Mutex::new(())),
     };
 
     let app = Router::new()
@@ -891,6 +1093,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/claims", get(list_claims_handler))
         .route("/claims/:id", get(get_claim_handler))
         .route("/claims/:id/mark-paid", post(mark_paid_handler))
+        .route("/claims/:id/approve", post(approve_handler))
         .route("/claims/:id/reject", post(reject_handler))
         .route("/admin", get(admin_page))
         .layer(TraceLayer::new_for_http())

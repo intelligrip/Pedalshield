@@ -14,6 +14,8 @@
 //!         process_block(&block, &ivk, &mut tree, &mut found, &mut progress)?;
 //!     }
 
+use std::collections::HashSet;
+
 use orchard::keys::PreparedIncomingViewingKey;
 use orchard::note::{ExtractedNoteCommitment, Note, Nullifier};
 use orchard::note_encryption::{CompactAction, OrchardDomain};
@@ -68,6 +70,10 @@ pub struct ScanProgress {
     pub blocks_scanned: u64,
     pub actions_inspected: u64,
     pub notes_found: u64,
+    /// Every nullifier revealed on chain in the scanned range. Each
+    /// Orchard action publishes the nullifier of the note it spends, so
+    /// a note we own is spent iff its nullifier appears in this set.
+    pub all_nullifiers: HashSet<[u8; 32]>,
 }
 
 /// Walk every Orchard action in `block` in canonical (tx, action) order,
@@ -108,6 +114,9 @@ pub fn process_block(
                     field: "nullifier",
                 },
             )?;
+            // Record every on-chain nullifier so the spender can tell
+            // which of our notes have already been spent.
+            progress.all_nullifiers.insert(nullifier_bytes);
             let cmx_bytes = bytes32(&action.cmx).ok_or(ScanError::MalformedAction {
                 height,
                 tx_index,
