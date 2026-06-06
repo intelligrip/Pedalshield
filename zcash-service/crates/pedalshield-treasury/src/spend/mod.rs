@@ -13,6 +13,11 @@
 //! existing scanner. Phase 3 wires `orchard::builder::Builder`. Phase 4
 //! wraps in v5 tx + SIGHASH + sign + broadcast.
 
+pub mod scanner;
+pub mod spender;
 pub mod tree;
 
+pub use scanner::{
+    process_block, FoundNote, ScanError, ScanProgress,
+};
 pub use tree::{OrchardTree, OrchardTreeError, OrchardWitness};

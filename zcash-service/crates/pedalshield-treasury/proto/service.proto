@@ -25,6 +25,12 @@ service CompactTxStreamer {
     // Broadcast a serialised transaction. Returns lightwalletd's
     // forwarded response from zcashd's sendrawtransaction RPC.
     rpc SendTransaction (RawTransaction) returns (SendResponse) {}
+
+    // Return the Sapling + Orchard note-commitment tree state as of the
+    // given block. orchardTree is a hex-encoded legacy CommitmentTree
+    // (frontier) we seed our local tree from so witness anchors match
+    // consensus.
+    rpc GetTreeState (BlockID) returns (TreeState) {}
 }
 
 message Empty {}
@@ -49,6 +55,15 @@ message RawTransaction {
 message SendResponse {
     int32  error_code    = 1;
     string error_message = 2;
+}
+
+message TreeState {
+    string network     = 1;  // "main" or "test"
+    uint64 height      = 2;
+    string hash        = 3;  // block hash, hex
+    uint32 time        = 4;
+    string saplingTree = 5;  // hex-encoded Sapling CommitmentTree
+    string orchardTree = 6;  // hex-encoded Orchard CommitmentTree
 }
 
 message LightdInfo {

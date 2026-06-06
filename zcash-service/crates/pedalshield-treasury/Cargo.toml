@@ -82,6 +82,18 @@ zcash_note_encryption = "*"
 # needed). Pin to match orchard exactly so trait impls unify.
 incrementalmerkletree = { version = "0.8", features = ["legacy-api"] }
 
+# Needed for zcash_primitives' v5 TransactionBuilder generics. We build a
+# fully-shielded Orchard tx (no transparent, no sapling), so:
+#  - `transparent` supplies the empty TransparentSigningSet.
+#  - `sapling`'s mock provers satisfy the SpendProver/OutputProver bounds;
+#    they are never called because the tx has zero Sapling components, so
+#    no Sapling proving parameters (the 50MB params files) are required.
+# Versions match what zcash_primitives 0.27 already resolves to.
+# Pin EXACTLY to the versions zcash_primitives 0.27 links, or the
+# TransparentSigningSet / prover types won't unify across crate versions.
+transparent = { package = "zcash_transparent", version = "=0.7.0" }
+sapling = { package = "sapling-crypto", version = "=0.7.0", features = ["test-dependencies"] }
+
 # CLI subcommand parsing for the treasury_wallet binary.
 clap = { version = "4", features = ["derive"] }
 

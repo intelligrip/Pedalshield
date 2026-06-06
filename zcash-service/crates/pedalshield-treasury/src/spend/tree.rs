@@ -24,6 +24,7 @@ use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
 use thiserror::Error;
+use zcash_primitives::merkle_tree::read_commitment_tree;
 
 /// Orchard note commitment tree depth. Hardcoded in the protocol spec.
 pub const ORCHARD_TREE_DEPTH: u8 = 32;
@@ -71,6 +72,46 @@ impl OrchardTree {
             next_position: 0,
             witnesses: HashMap::new(),
         }
+    }
+
+    /// Seed the tree from a lightwalletd `GetTreeState.orchardTree` blob
+    /// (hex-encoded legacy CommitmentTree frontier) so positions and the
+    /// witness anchor match consensus. Starts with no marked witnesses;
+    /// mark notes via `append` as you scan forward from the seed height.
+    pub fn from_tree_state(orchard_tree_hex: &str) -> Result<Self, OrchardTreeError> {
+        let h = orchard_tree_hex.trim();
+        if h.is_empty() {
+            return Ok(Self::empty());
+        }
+        if h.len() % 2 != 0 {
+            return Err(OrchardTreeError::WitnessInternal(
+                "orchardTree hex has odd length".into(),
+            ));
+        }
+        let hb = h.as_bytes();
+        let mut bytes = Vec::with_capacity(h.len() / 2);
+        for i in (0..h.len()).step_by(2) {
+            let hi = (hb[i] as char).to_digit(16);
+            let lo = (hb[i + 1] as char).to_digit(16);
+            match (hi, lo) {
+                (Some(a), Some(b)) => bytes.push((a * 16 + b) as u8),
+                _ => {
+                    return Err(OrchardTreeError::WitnessInternal(
+                        "orchardTree hex has non-hex digit".into(),
+                    ))
+                }
+            }
+        }
+        let tree: CommitmentTree<MerkleHashOrchard, ORCHARD_TREE_DEPTH> =
+            read_commitment_tree(&bytes[..]).map_err(|e| {
+                OrchardTreeError::WitnessInternal(format!("read_commitment_tree: {e}"))
+            })?;
+        let next_position = tree.size() as u64;
+        Ok(Self {
+            tree,
+            next_position,
+            witnesses: HashMap::new(),
+        })
     }
 
     /// Append a single note commitment. If `mark=true`, also create a
