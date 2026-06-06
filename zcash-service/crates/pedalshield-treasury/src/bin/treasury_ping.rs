@@ -79,10 +79,11 @@ async fn ping(endpoint: &str) -> Result<String, Box<dyn std::error::Error>> {
         .into_inner();
 
     Ok(format!(
-        "Lightwalletd ({endpoint})\n  vendor:                {vendor}\n  version:               {version}\n  chain_name:            {chain}\n  reported_height:       {bh}\n  estimated_tip:         {eh}\n  sapling_activation:    {sap}\n\nGetLatestBlock\n  height: {lh}\n  hash:   {hash}\n",
+        "Lightwalletd ({endpoint})\n  vendor:                {vendor}\n  version:               {version}\n  chain_name:            {chain}\n  consensus_branch_id:   {cbid}\n  reported_height:       {bh}\n  estimated_tip:         {eh}\n  sapling_activation:    {sap}\n\nGetLatestBlock\n  height: {lh}\n  hash:   {hash}\n",
         vendor = info.vendor,
         version = info.version,
         chain = info.chain_name,
+        cbid = info.consensus_branch_id,
         bh = info.block_height,
         eh = info.estimated_height,
         sap = info.sapling_activation_height,

@@ -28,11 +28,14 @@ frost-rerandomized = "3"
 # (verified by treasury_keygen + treasury_balance compiling + running
 # end-to-end on mainnet at v0.5.2). These are the same versions that
 # scan blocks and IVK-decrypt notes successfully today.
-orchard          = "0.13"
-zcash_primitives = "0.27"
-zcash_address    = "0.11"
-zcash_keys       = { version = "0.13", features = ["orchard"] }
-zcash_protocol   = "0.8"
+# Nu6.2 generation. The June 2026 emergency upgrade (consensus branch id
+# 0x5437f330 = BranchId::Nu6_2, mainnet block 3,364,600) is only known to
+# zcash_protocol >= 0.9, so the whole stack must move together.
+orchard          = "0.14"
+zcash_primitives = "0.28"
+zcash_address    = "0.12"
+zcash_keys       = { version = "0.14", features = ["orchard"] }
+zcash_protocol   = "0.9"
 zip32            = "0.2"
 
 # Seed phrase generation for the treasury backup. Standard BIP-39
@@ -91,7 +94,7 @@ incrementalmerkletree = { version = "0.8", features = ["legacy-api"] }
 # Versions match what zcash_primitives 0.27 already resolves to.
 # Pin EXACTLY to the versions zcash_primitives 0.27 links, or the
 # TransparentSigningSet / prover types won't unify across crate versions.
-transparent = { package = "zcash_transparent", version = "=0.7.0" }
+transparent = { package = "zcash_transparent", version = "=0.8.0" }
 sapling = { package = "sapling-crypto", version = "=0.7.0", features = ["test-dependencies"] }
 
 # CLI subcommand parsing for the treasury_wallet binary.
