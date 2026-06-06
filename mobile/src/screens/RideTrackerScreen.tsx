@@ -9,6 +9,7 @@ import {
 import { Button } from '../components/Button.tsx';
 import { Card } from '../components/Card.tsx';
 import { LiveRouteMap } from '../components/LiveRouteMap.tsx';
+import { PayoutCard } from '../components/PayoutCard.tsx';
 import { PrivacyRevealSheet } from '../components/PrivacyRevealSheet.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
@@ -251,18 +252,18 @@ function PostRide({
       </Card>
 
       {verified && (
-        <Card>
-          <Text style={styles.cardLabel}>SHIELDED PAYOUT</Text>
-          <Text style={styles.payoutLine}>
-            FROST 2-of-3 ceremony queued. ZEC has landed in your Streak Vault.
-          </Text>
+        <>
+          <PayoutCard
+            rideId={result.rideId}
+            distanceM={result.verifiedKm * 1000}
+          />
           <Pressable
             style={styles.linkRow}
             onPress={() => setRevealOpen(true)}
           >
             <Text style={styles.linkText}>See what was sent ›</Text>
           </Pressable>
-        </Card>
+        </>
       )}
 
       {result.flags.length > 0 && (

@@ -77,6 +77,30 @@ declare module 'react-native' {
   export const Dimensions: {
     get(dim: 'window' | 'screen'): { width: number; height: number; scale: number; fontScale: number };
   };
+
+  export interface TextInputProps extends ViewProps {
+    value?: string;
+    onChangeText?: (text: string) => void;
+    placeholder?: string;
+    placeholderTextColor?: string;
+    autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+    autoCorrect?: boolean;
+    multiline?: boolean;
+    editable?: boolean;
+    secureTextEntry?: boolean;
+  }
+  export const TextInput: ComponentType<TextInputProps>;
+
+  export const ActivityIndicator: ComponentType<{
+    size?: 'small' | 'large' | number;
+    color?: string;
+    style?: StyleProp<ViewStyle>;
+  }>;
+
+  export const Linking: {
+    openURL(url: string): Promise<void>;
+    canOpenURL(url: string): Promise<boolean>;
+  };
 }
 
 declare module 'react-native-svg' {
