@@ -145,3 +145,40 @@ declare module 'expo-status-bar' {
 declare module 'react-native-gesture-handler' {
   // side-effect import only
 }
+
+declare module 'expo-location' {
+  export enum Accuracy {
+    Lowest = 1,
+    Low = 2,
+    Balanced = 3,
+    High = 4,
+    Highest = 5,
+    BestForNavigation = 6,
+  }
+  export function requestForegroundPermissionsAsync(): Promise<{ status: string }>;
+  export interface LocationObject {
+    coords: {
+      latitude: number;
+      longitude: number;
+      altitude: number | null;
+      accuracy: number | null;
+      speed: number | null;
+      heading: number | null;
+    };
+    timestamp: number;
+  }
+  export interface LocationSubscription {
+    remove(): void;
+  }
+  export function watchPositionAsync(
+    opts: { accuracy?: number; timeInterval?: number; distanceInterval?: number },
+    cb: (loc: LocationObject) => void,
+  ): Promise<LocationSubscription>;
+}
+
+declare module 'expo-sensors' {
+  export const Accelerometer: {
+    setUpdateInterval(ms: number): void;
+    addListener(cb: (d: { x: number; y: number; z: number }) => void): { remove(): void };
+  };
+}

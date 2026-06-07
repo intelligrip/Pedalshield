@@ -15,7 +15,9 @@ import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
 import { RideSession, type RideSessionSnapshot } from '../ride/rideSession.ts';
-import { SyntheticSensorSource } from '../ride/syntheticSensorSource.ts';
+import { RealSensorSource } from '../ride/realSensorSource.ts';
+
+type SensorSource = { start: (s: RideSession) => void; stop: () => void };
 import {
   formatDurationMs,
   formatKm,
@@ -35,7 +37,7 @@ const MAP_HEIGHT = 360;
 
 export function RideTrackerScreen() {
   const sessionRef = useRef<RideSession>(new RideSession(ATT));
-  const sourceRef = useRef<SyntheticSensorSource>(new SyntheticSensorSource());
+  const sourceRef = useRef<SensorSource | null>(null);
   const [snap, setSnap] = useState<RideSessionSnapshot>(
     sessionRef.current.snapshot(),
   );
@@ -73,7 +75,7 @@ export function RideTrackerScreen() {
         snap={snap}
         mapWidth={mapWidth}
         onDone={() => {
-          sourceRef.current.stop();
+          sourceRef.current?.stop();
           sessionRef.current.reset();
         }}
       />
@@ -127,6 +129,7 @@ export function RideTrackerScreen() {
             label="Start ride"
             size="lg"
             onPress={() => {
+              sourceRef.current = new RealSensorSource();
               sessionRef.current.start();
               sourceRef.current.start(sessionRef.current);
             }}
@@ -138,7 +141,7 @@ export function RideTrackerScreen() {
             size="lg"
             variant="danger"
             onPress={() => {
-              sourceRef.current.stop();
+              sourceRef.current?.stop();
               sessionRef.current.stop();
             }}
           />
@@ -363,6 +366,17 @@ const styles = StyleSheet.create({
   },
   glassUnit: { color: theme.color.textDim, fontSize: 11, fontWeight: '700' },
   actions: { marginTop: 'auto' },
+  sourceToggle: {
+    alignSelf: 'center',
+    marginBottom: theme.space.md,
+    paddingVertical: theme.space.sm,
+    paddingHorizontal: theme.space.md,
+  },
+  sourceToggleText: {
+    color: theme.color.textDim,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   statusBadge: {
     fontSize: theme.font.label.size,
     fontWeight: '800',
