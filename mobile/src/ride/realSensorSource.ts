@@ -64,6 +64,12 @@ export class RealSensorSource {
         (loc) => {
           if (!this.session) return;
           const c = loc.coords;
+          // Drop low-confidence fixes. Raw GPS (especially the cold-start
+          // fix) can jump tens of metres, which the verifier reads as a
+          // >90 km/h "teleport" hard-fail. Only feed tight fixes so a real
+          // ride doesn't get rejected by GPS noise.
+          const acc = c.accuracy ?? 999;
+          if (acc > 30) return;
           try {
             this.session.addGeoSample({
               lat: c.latitude,

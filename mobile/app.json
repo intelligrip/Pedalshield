@@ -6,7 +6,10 @@
     "orientation": "portrait",
     "scheme": "pedalshield",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#0A0E1A"
     },
     "assetBundlePatterns": [
@@ -27,6 +30,10 @@
     },
     "android": {
       "package": "com.pedalshield.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0A0E1A"
+      },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
