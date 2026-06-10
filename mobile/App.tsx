@@ -20,6 +20,7 @@ const navTheme = {
 
 export default function App() {
   const [ready, setReady] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
     // Boot the wallet. MockWallet for simulator / dev; swap in
@@ -47,7 +48,14 @@ export default function App() {
         setWallet(wallet);
         return wallet.startSync();
       })
-      .then(() => setReady(true));
+      .then(() => setReady(true))
+      .catch((err) => {
+        // Never dead-end on a wallet-boot hiccup: surface the error and
+        // let the app load anyway (wallet features degrade gracefully).
+        console.error('[boot] wallet init/sync failed:', err);
+        setBootError(String(err?.message ?? err));
+        setReady(true);
+      });
   }, []);
 
   if (!ready) {
@@ -56,6 +64,7 @@ export default function App() {
         <StatusBar barStyle="light-content" backgroundColor={theme.color.bg} />
         <Text style={styles.bootText}>Pedalshield</Text>
         <Text style={styles.bootSub}>booting shielded wallet...</Text>
+        {bootError ? <Text style={styles.bootErr}>{bootError}</Text> : null}
       </View>
     );
   }
@@ -85,4 +94,10 @@ const styles = StyleSheet.create({
     fontWeight: theme.font.h1.weight,
   },
   bootSub: { color: theme.color.textDim, fontSize: 14 },
+  bootErr: {
+    color: '#ff6b6b',
+    fontSize: 12,
+    paddingHorizontal: 24,
+    textAlign: 'center',
+  },
 });

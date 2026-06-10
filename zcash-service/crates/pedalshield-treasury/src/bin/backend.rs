@@ -743,7 +743,7 @@ const ADMIN_HTML: &str = r#"<!DOCTYPE html>
 </head>
 <body>
   <h1>Pedalshield Treasury</h1>
-  <div class="sub">Operator console &middot; v0.5.3 manual payout</div>
+  <div class="sub">Diagnostics console &middot; v0.5.3 &middot; payouts are autonomous</div>
 
   <div class="status-bar">
     <span class="dot"></span>
@@ -758,9 +758,9 @@ const ADMIN_HTML: &str = r#"<!DOCTYPE html>
     <h3 style="margin:0 0 12px 0">Mark claim paid</h3>
     <div class="ts" id="pay-claim-id"></div>
     <p style="font-size:13px;color:var(--dim);line-height:20px">
-      After you've sent the payout from Zashi, paste the 64-char transaction
-      id (Zashi shows it in the transaction details). The claim will flip to
-      <b>paid</b> with that hash recorded.
+      Diagnostics override only &mdash; payouts run autonomously. If a payout
+      was completed out-of-band, paste the 64-char transaction id to flip the
+      claim to <b>paid</b> with that hash recorded.
     </p>
     <input id="pay-txhash" placeholder="64-char hex tx hash" maxlength="64">
     <div class="dlg-actions">
