@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Button } from './Button.tsx';
 import { Card } from './Card.tsx';
+import { ShareCard } from './ShareCard.tsx';
 import { theme } from '../app/theme.ts';
 import { submitClaim, pollClaim } from '../lib/api.ts';
 import {
@@ -95,9 +96,11 @@ function Pipeline({ active, done }: { active: number; done: boolean }) {
 export function PayoutCard({
   rideId,
   distanceM,
+  integrityScore = 0,
 }: {
   rideId: string;
   distanceM: number;
+  integrityScore?: number;
 }) {
   const [ua, setUa] = useState(getRecipientUA());
   const [phase, setPhase] = useState<Phase>('idle');
@@ -172,6 +175,11 @@ export function PayoutCard({
           >
             <Text style={styles.linkText}>View on explorer ›</Text>
           </Pressable>
+          <ShareCard
+            distanceM={distanceM}
+            integrityScore={integrityScore}
+            txid={txid}
+          />
         </>
       ) : busy ? (
         <Pipeline active={stage} done={false} />

@@ -102,6 +102,14 @@ declare module 'react-native' {
     canOpenURL(url: string): Promise<boolean>;
   };
 
+  export const Share: {
+    share(content: {
+      message?: string;
+      url?: string;
+      title?: string;
+    }): Promise<{ action: string }>;
+  };
+
   export namespace Animated {
     class Value {
       constructor(initial: number);

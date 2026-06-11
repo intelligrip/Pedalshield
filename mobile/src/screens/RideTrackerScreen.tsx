@@ -341,6 +341,7 @@ function PostRide({
           <PayoutCard
             rideId={result.rideId}
             distanceM={result.verifiedKm * 1000}
+            integrityScore={result.integrityScore}
           />
           <Pressable
             style={styles.linkRow}
