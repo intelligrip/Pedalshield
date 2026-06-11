@@ -101,6 +101,30 @@ declare module 'react-native' {
     openURL(url: string): Promise<void>;
     canOpenURL(url: string): Promise<boolean>;
   };
+
+  export namespace Animated {
+    class Value {
+      constructor(initial: number);
+      addListener(cb: (state: { value: number }) => void): string;
+      removeListener(id: string): void;
+      setValue(v: number): void;
+    }
+    interface CompositeAnimation {
+      start(cb?: (result: { finished: boolean }) => void): void;
+      stop(): void;
+    }
+    function timing(
+      value: Value,
+      config: { toValue: number; duration?: number; delay?: number; useNativeDriver: boolean },
+    ): CompositeAnimation;
+    function spring(
+      value: Value,
+      config: { toValue: number; friction?: number; tension?: number; useNativeDriver: boolean },
+    ): CompositeAnimation;
+    function sequence(animations: CompositeAnimation[]): CompositeAnimation;
+    const View: ComponentType<ViewProps & { style?: unknown }>;
+    const Text: ComponentType<TextProps & { style?: unknown }>;
+  }
 }
 
 declare module 'react-native-svg' {

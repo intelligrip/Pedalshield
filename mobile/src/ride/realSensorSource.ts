@@ -20,6 +20,36 @@ import type { RideSession } from './rideSession.ts';
 
 const GRAVITY = 9.81;
 
+/**
+ * Live GPS fix quality, published for UI consumption (signal chip on the
+ * ride screen). Stays on device like everything else here.
+ */
+export interface GpsQuality {
+  /** Horizontal accuracy in metres of the last fix; null = no fix yet. */
+  accuracy: number | null;
+  /** True when the fix passed the verifier's 30 m gate and was counted. */
+  usable: boolean;
+  /** Epoch ms of the last fix (0 = none this session). */
+  at: number;
+}
+
+let lastQuality: GpsQuality = { accuracy: null, usable: false, at: 0 };
+const qualityListeners = new Set<(q: GpsQuality) => void>();
+
+function publishGpsQuality(q: GpsQuality): void {
+  lastQuality = q;
+  for (const l of qualityListeners) l(q);
+}
+
+/** Subscribe to GPS fix quality; fires immediately with the latest value. */
+export function subscribeGpsQuality(cb: (q: GpsQuality) => void): () => void {
+  cb(lastQuality);
+  qualityListeners.add(cb);
+  return () => {
+    qualityListeners.delete(cb);
+  };
+}
+
 export class RealSensorSource {
   private session: RideSession | null = null;
   private geoSub: { remove(): void } | null = null;
@@ -29,6 +59,7 @@ export class RealSensorSource {
   start(session: RideSession): void {
     this.session = session;
     this.stopped = false;
+    publishGpsQuality({ accuracy: null, usable: false, at: 0 });
     void this.init();
   }
 
@@ -69,6 +100,11 @@ export class RealSensorSource {
           // >90 km/h "teleport" hard-fail. Only feed tight fixes so a real
           // ride doesn't get rejected by GPS noise.
           const acc = c.accuracy ?? 999;
+          publishGpsQuality({
+            accuracy: acc === 999 ? null : acc,
+            usable: acc <= 30,
+            at: Date.now(),
+          });
           if (acc > 30) return;
           try {
             this.session.addGeoSample({

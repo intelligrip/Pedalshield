@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Dimensions,
   Pressable,
   StyleSheet,
@@ -15,7 +16,11 @@ import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
 import { RideSession, type RideSessionSnapshot } from '../ride/rideSession.ts';
-import { RealSensorSource } from '../ride/realSensorSource.ts';
+import {
+  RealSensorSource,
+  subscribeGpsQuality,
+  type GpsQuality,
+} from '../ride/realSensorSource.ts';
 
 type SensorSource = { start: (s: RideSession) => void; stop: () => void };
 import {
@@ -23,9 +28,6 @@ import {
   formatKm,
   formatKmh,
 } from '../lib/format.ts';
-import { getWallet } from '../wallet/walletManager.ts';
-import { zecToZatoshi } from '../wallet/mockWallet.ts';
-
 const ATT = {
   platform: 'android' as const,
   token: 'demo-attestation',
@@ -88,13 +90,16 @@ export function RideTrackerScreen() {
         <Text style={styles.title}>
           {snap.state === 'active' ? 'Riding' : 'Ride'}
         </Text>
-        <Pressable
-          style={styles.padlockChip}
-          onPress={() => setRevealOpen(true)}
-        >
-          <Text style={styles.padlockIcon}>🔒</Text>
-          <Text style={styles.padlockText}>On device only</Text>
-        </Pressable>
+        <View style={styles.chipRow}>
+          {snap.state === 'active' && <GpsChip />}
+          <Pressable
+            style={styles.padlockChip}
+            onPress={() => setRevealOpen(true)}
+          >
+            <Text style={styles.padlockIcon}>🔒</Text>
+            <Text style={styles.padlockText}>On device only</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.mapWrap}>
@@ -166,6 +171,101 @@ export function RideTrackerScreen() {
   );
 }
 
+/**
+ * Live GPS signal chip. Answers the rider's only mid-ride anxiety:
+ * "is this counting?" Green = fixes are passing the verifier's 30 m
+ * accuracy gate; amber = weak signal (fixes being dropped); dim =
+ * still acquiring.
+ */
+function GpsChip() {
+  const [q, setQ] = useState<GpsQuality>({
+    accuracy: null,
+    usable: false,
+    at: 0,
+  });
+  const [, setBeat] = useState(0);
+
+  useEffect(() => subscribeGpsQuality(setQ), []);
+  // Re-evaluate staleness every 2s so a lost signal dims the chip.
+  useEffect(() => {
+    const id = setInterval(() => setBeat((b) => b + 1), 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  const stale = q.at === 0 || Date.now() - q.at > 6000;
+  const label = stale
+    ? 'GPS …'
+    : q.usable
+      ? `GPS ±${Math.round(q.accuracy ?? 0)} m`
+      : 'GPS weak';
+  const color = stale
+    ? theme.color.textMuted
+    : q.usable
+      ? theme.color.success
+      : theme.color.warning;
+
+  return (
+    <View style={[styles.gpsChip, { borderColor: color }]}>
+      <View style={[styles.gpsDot, { backgroundColor: color }]} />
+      <Text style={[styles.gpsText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * Post-ride verdict with a build-up: the integrity score counts up,
+ * then the status stamps in. The verification is the product - give
+ * it a moment instead of a static label.
+ */
+function ScoreReveal({
+  status,
+  score,
+  color,
+}: {
+  status: string;
+  score: number;
+  color: string;
+}) {
+  const [display, setDisplay] = useState(0);
+  const badgeScale = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const v = new Animated.Value(0);
+    const sub = v.addListener(({ value }) => setDisplay(value));
+    Animated.timing(v, {
+      toValue: score,
+      duration: 1100,
+      useNativeDriver: false,
+    }).start(() => {
+      setDisplay(score);
+      Animated.spring(badgeScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 120,
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => v.removeListener(sub);
+  }, [score]);
+
+  return (
+    <View>
+      <View style={styles.revealRow}>
+        <Text style={styles.revealScore}>{display.toFixed(2)}</Text>
+        <Animated.Text
+          style={[
+            styles.statusBadge,
+            { color, transform: [{ scale: badgeScale }] },
+          ]}
+        >
+          {status.toUpperCase()}
+        </Animated.Text>
+      </View>
+      <Text style={styles.revealLabel}>INTEGRITY SCORE</Text>
+    </View>
+  );
+}
+
 function GlassTile({
   label,
   value,
@@ -204,24 +304,9 @@ function PostRide({
       : theme.color.danger;
   const [revealOpen, setRevealOpen] = useState(false);
 
-  // Demo payout: simulate a credit to the wallet for a verified ride.
-  // In production this is the server's confirmed shielded payout.
-  useEffect(() => {
-    if (!verified) return;
-    try {
-      const w = getWallet() as unknown as {
-        credit?: (z: bigint, m?: string) => void;
-      };
-      const z = BigInt(Math.floor(result.verifiedKm * 5_000));
-      if (typeof w.credit === 'function' && z > 0n) {
-        w.credit(z, `Pedalshield payout - ride ${result.rideId.slice(0, 8)}`);
-      } else if (z > 0n) {
-        void zecToZatoshi('0');
-      }
-    } catch {
-      // wallet not configured; demo only
-    }
-  }, [verified, result.rideId, result.verifiedKm]);
+  // No simulated credits: the only balance movement is the real
+  // autonomous shielded payout (PayoutCard polls the backend for the
+  // mainnet txid). The app never shows money that doesn't exist.
 
   return (
     <ScreenContainer>
@@ -237,20 +322,17 @@ function PostRide({
       </View>
 
       <Card accent>
-        <Text style={[styles.statusBadge, { color }]}>
-          {result.status.toUpperCase()}
-        </Text>
+        <ScoreReveal
+          status={result.status}
+          score={result.integrityScore}
+          color={color}
+        />
         <View style={{ height: theme.space.md }} />
         <Stat
           label="Verified distance"
           value={formatKm(result.verifiedKm)}
           unit="km"
           emphasised
-        />
-        <View style={{ height: theme.space.md }} />
-        <Stat
-          label="Integrity score"
-          value={result.integrityScore.toFixed(2)}
         />
       </Card>
 
@@ -304,6 +386,42 @@ const styles = StyleSheet.create({
     fontSize: theme.font.h1.size,
     fontWeight: theme.font.h1.weight,
     letterSpacing: theme.font.h1.letterSpacing,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space.sm,
+  },
+  gpsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: theme.space.md,
+    paddingVertical: theme.space.sm,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    backgroundColor: 'rgba(10, 14, 26, 0.6)',
+  },
+  gpsDot: { width: 6, height: 6, borderRadius: 3 },
+  gpsText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
+  revealRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  revealScore: {
+    color: theme.color.text,
+    fontSize: 40,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -1,
+  },
+  revealLabel: {
+    color: theme.color.textDim,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.0,
+    marginTop: 2,
   },
   padlockChip: {
     flexDirection: 'row',
