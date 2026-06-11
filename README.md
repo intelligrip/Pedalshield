@@ -32,6 +32,7 @@ loop, on the NU6.2-current network rules.
 
 | Claim | Receipt |
 | --- | --- |
+| **Real outdoor ride → on-device verification → autonomous shielded payout to a rider's own wallet** (June 11, 2026) | txid [`2a849aca…b264ab`](https://mainnet.zcashexplorer.app/transactions/2a849aca04f9b9661ec826c22db97edfb988a22fc7ce7432a651abbc08b264ab) — 492 m ride, verified on-device, paid with no human in the loop |
 | Autonomous shielded Orchard payout, no operator | txid [`f1a3bacc…c10ba6`](https://mainnet.zcashexplorer.app/transactions/f1a3bacc582e156069b108afa61711a7dbae9ceff84c8d0c5b8f5fca15c10ba6) — fired automatically by `POST /claim` |
 | Repeatable (not a one-off) | txid [`ef0e2a57…060587`](https://mainnet.zcashexplorer.app/transactions/ef0e2a577f3f16e50cfd20c2b03dd1c14344f63d21ae34e6e4989c05c0060587) |
 | First autonomous spend, anchor verified byte-identical to `GetTreeState` | txid `6da9298a…272f5b74`, mined block 3,368,791 |
