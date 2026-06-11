@@ -16,16 +16,16 @@
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import type {
   Balance,
-  BalanceListener,
   SendParams,
   SendResult,
-  SyncListener,
   SyncStatus,
   Transaction,
   WalletAddress,
   Zatoshi,
 } from './types.ts';
 import type {
+  BalanceListener,
+  SyncListener,
   Wallet,
   WalletInitParams,
 } from './walletInterface.ts';
@@ -150,16 +150,16 @@ export class NativeWallet implements Wallet {
 
   onSyncStatusChange(listener: SyncListener): () => void {
     if (!Emitter) return () => undefined;
-    const sub = Emitter.addListener('syncStatus', (raw: SyncStatus) =>
-      listener(raw),
+    const sub = Emitter.addListener('syncStatus', (raw: unknown) =>
+      listener(raw as SyncStatus),
     );
     return () => sub.remove();
   }
 
   onBalanceChange(listener: BalanceListener): () => void {
     if (!Emitter) return () => undefined;
-    const sub = Emitter.addListener('balance', (raw: NativeBalance) =>
-      listener(toBalance(raw)),
+    const sub = Emitter.addListener('balance', (raw: unknown) =>
+      listener(toBalance(raw as NativeBalance)),
     );
     return () => sub.remove();
   }

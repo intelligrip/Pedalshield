@@ -10,7 +10,12 @@
  * iOS blocks cleartext HTTP by default; app.json grants an
  * NSAllowsLocalNetworking exception so LAN http:// works for the demo.
  */
-export const BACKEND_URL = 'http://192.168.0.62:8787';
+/**
+ * Production builds inject EXPO_PUBLIC_BACKEND_URL via eas.json (the
+ * `production` profile). Dev builds fall back to the Mac's LAN IP.
+ */
+export const BACKEND_URL =
+  process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.0.136:8787';
 
 /** Block explorer base for surfacing a payout txid. */
 export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/';

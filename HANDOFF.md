@@ -52,6 +52,31 @@ comments break — `INTERACTIVE_COMMENTS` is off). Edit files directly instead.
 
 ---
 
+## CRITICAL: Ironwood — Orchard pool is being phased out (added Jun 11)
+
+Following the Orchard counterfeiting bug, the ecosystem (ZODL + Tachyon, Valar
+Group, Zcash Foundation, Shielded Labs) proposed **Ironwood**, a successor
+shielded pool, targeting **late-July 2026 activation**. At activation, Orchard
+closes to **new deposits and intra-pool transfers**; funds exit only through a
+turnstile into Ironwood.
+
+What this means for us:
+
+- **Treasury→rider payouts are Orchard→Orchard internal transfers — they stop
+  working at Ironwood activation.** The entire hand-rolled spend path
+  (`tree.rs` / `scanner.rs` / `spender.rs`, orchard 0.14 builder) must be
+  rebuilt against Ironwood crates once they ship. Post-hackathon work.
+- **The hackathon window survives**: submit Jul 5, deadline Jul 15, activation
+  late July. NU6.2 stays the live consensus rules until then.
+- **Mitigation: record demo footage as early as possible** (now scheduled
+  Jun 13–14 in TIMELINE.md). A recorded demo + mainnet txids is the proof if
+  activation slips earlier or judges test post-activation.
+- Existing UAs stay valid — ZEC sent to pre-Ironwood Orchard receivers
+  auto-lands in the new pool. No address rotation for riders or treasury.
+- Treasury migration is trivial (~0.0096 ZEC through the turnstile).
+- Submission writeup: frame as a strength — re-pinned to NU6.2 within days of
+  the emergency fork, Ironwood migration planned.
+
 ## CRITICAL: the Nu6.2 dependency generation
 
 On **2026-06-01** a counterfeiting bug in the Orchard circuit was patched and

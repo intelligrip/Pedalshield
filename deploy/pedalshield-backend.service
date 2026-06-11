@@ -1,0 +1,32 @@
+[Unit]
+Description=Pedalshield autonomous payout backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pedal
+WorkingDirectory=/home/pedal/Pedalshield/zcash-service
+ExecStart=/home/pedal/Pedalshield/zcash-service/target/release/backend
+Restart=on-failure
+RestartSec=5
+
+# --- Pedalshield config ---
+Environment=PEDALSHIELD_PORT=8787
+Environment=PEDALSHIELD_LIGHTWALLETD=https://zec.rocks:443
+Environment=PEDALSHIELD_BIRTHDAY=3361149
+Environment=PEDALSHIELD_ZAT_PER_KM=20000
+Environment=PEDALSHIELD_MAX_PAYOUT_ZAT=500000
+Environment=PEDALSHIELD_AUTO_PAYOUT=1
+Environment=PEDALSHIELD_DB=/home/pedal/Pedalshield/zcash-service/pedalshield.sqlite
+Environment=TREASURY_SPENDING_KEY_FILE=/home/pedal/Pedalshield/zcash-service/treasury-keys/treasury_spending_key.bin
+# EDIT: your treasury UA
+Environment=PEDALSHIELD_TREASURY_UA=u19r0gg89utgp9kcqtdasfyfc6nds5sc6tgzny2sgvrsuyw3z97kkg45h87gufsamfhmyxfykg6amlk3lp0ynlc9wgxx60v9gdsuap0zk9
+
+# --- Hardening ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/pedal/Pedalshield/zcash-service
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

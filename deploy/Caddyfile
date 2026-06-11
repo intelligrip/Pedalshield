@@ -1,0 +1,13 @@
+# EDIT the domain, then: sudo systemctl reload caddy
+# Caddy fetches/renews TLS automatically.
+api.pedalshield.example.com {
+	reverse_proxy 127.0.0.1:8787
+
+	# modest hardening
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+
+	# rate-limit bursts at the edge if needed later (caddy-ratelimit plugin)
+}

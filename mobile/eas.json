@@ -31,7 +31,22 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "production": {
+      "autoIncrement": true,
+      "node": "22.18.0",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.pedalshield.example.com"
+      },
+      "ios": {
+        "simulator": false,
+        "resourceClass": "m-medium"
+      }
     }
   },
-  "submit": {}
+  "submit": {
+    "production": {
+      "ios": {}
+    }
+  }
 }

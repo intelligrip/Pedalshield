@@ -12,14 +12,14 @@
 
 import type {
   Balance,
-  BalanceListener,
-  SyncListener,
   SyncStatus,
   Transaction,
   WalletAddress,
   Zatoshi,
 } from './types.ts';
 import type {
+  BalanceListener,
+  SyncListener,
   Wallet,
   WalletInitParams,
 } from './walletInterface.ts';
