@@ -16,6 +16,9 @@ import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
 import { RideSession, type RideSessionSnapshot } from '../ride/rideSession.ts';
+import { computeRideStats } from '../ride/rideStats.ts';
+import { RideStatsCard } from '../components/RideStatsCard.tsx';
+import type { RawRide } from '../verification/types.ts';
 import {
   RealSensorSource,
   subscribeGpsQuality,
@@ -75,6 +78,7 @@ export function RideTrackerScreen() {
     return (
       <PostRide
         snap={snap}
+        rawRide={sessionRef.current.getRawRide()}
         mapWidth={mapWidth}
         onDone={() => {
           sourceRef.current?.stop();
@@ -288,13 +292,19 @@ function GlassTile({
 
 function PostRide({
   snap,
+  rawRide,
   mapWidth,
   onDone,
 }: {
   snap: RideSessionSnapshot;
+  rawRide: RawRide | null;
   mapWidth: number;
   onDone: () => void;
 }) {
+  const report = useMemo(
+    () => (rawRide ? computeRideStats(rawRide) : null),
+    [rawRide],
+  );
   const result = snap.result!;
   const verified = result.status === 'verified';
   const color = verified
@@ -335,6 +345,8 @@ function PostRide({
           emphasised
         />
       </Card>
+
+      {report ? <RideStatsCard report={report} /> : null}
 
       {verified && (
         <>
