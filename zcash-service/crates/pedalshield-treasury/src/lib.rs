@@ -15,6 +15,7 @@
 //!
 //! See `zcash-service/README.md` for the full integration roadmap.
 
+pub mod accrual;
 pub mod anomaly;
 pub mod error;
 pub mod frost_coordinator;

@@ -53,3 +53,7 @@ yarn-debug.log*
 
 # Coverage
 coverage/
+
+# LibreOffice / temp lock files (from PDF generation)
+.~lock.*#
+*.tmp

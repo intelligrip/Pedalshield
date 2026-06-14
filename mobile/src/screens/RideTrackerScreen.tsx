@@ -314,9 +314,11 @@ function PostRide({
       : theme.color.danger;
   const [revealOpen, setRevealOpen] = useState(false);
 
-  // No simulated credits: the only balance movement is the real
-  // autonomous shielded payout (PayoutCard polls the backend for the
-  // mainnet txid). The app never shows money that doesn't exist.
+  // Balance movement: either a real autonomous per-claim Orchard payout
+  // (classic path) or off-chain accrual + later batched settlement
+  // (PEDAL_ACCRUAL=1). PayoutCard now handles both "paid" (with txid) and
+  // "accrued" (with live pending balance + withdraw-to-settle button).
+  // The app never shows money that doesn't exist.
 
   return (
     <ScreenContainer>

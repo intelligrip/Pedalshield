@@ -18,8 +18,15 @@ export interface ClaimSubmission {
 }
 
 export interface ClaimAck {
-  status: string; // "paying" (auto) | "queued" | "duplicate"
+  status: string; // "paying" (auto per-claim) | "queued" | "duplicate" | "accrued" (accrual mode)
   claim_id: string;
+}
+
+export interface AccrualBalance {
+  recipient_ua: string;
+  pending_zatoshi: number;
+  lifetime_zatoshi: number;
+  rides_count: number;
 }
 
 export interface ClaimRow {
@@ -103,4 +110,9 @@ export async function pollClaim(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Fetch current off-chain accrued balance for a UA (accrual mode). */
+export async function getAccrualBalance(ua: string): Promise<AccrualBalance> {
+  return fetchJson<AccrualBalance>(`${BACKEND_URL}/balance/${encodeURIComponent(ua)}`);
 }

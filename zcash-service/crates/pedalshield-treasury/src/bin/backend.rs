@@ -26,6 +26,8 @@
 //!     GET  /claims/{id}                   fetch a single claim
 //!     POST /claims/{id}/mark-paid         operator action: mark claim paid + record tx hash
 //!     POST /claims/{id}/reject            operator action: reject a claim with a reason
+//!     POST /settle                        accrual mode: run one settlement sweep now
+//!     POST /withdraw/{ua}                 accrual mode: settle a recipient's balance now
 //!
 //! All endpoints return JSON. Errors use HTTP status codes (400 / 404 /
 //! 500) with a JSON body `{ "error": "..." }`.
@@ -43,7 +45,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -74,6 +76,14 @@ struct AppState {
     /// When true, `POST /claim` fires the payout automatically (fully
     /// hands-off). When false, payouts only run via `POST /approve`.
     auto_payout: bool,
+    /// When true, `POST /claim` credits an off-chain accrual balance
+    /// instead of paying per ride; balances settle on-chain once they
+    /// cross `payout_floor_zat` (or via `/withdraw`). See
+    /// docs/SCALING_PAYOUTS.md. Takes precedence over `auto_payout`.
+    accrual_mode: bool,
+    /// Payout floor: a recipient's accrued balance settles on-chain once
+    /// it reaches this many zatoshi. Default 1_000_000 (0.01 ZEC).
+    payout_floor_zat: u64,
 }
 
 // ---------------------------------------------------------------------
@@ -132,6 +142,7 @@ struct Health {
     ok: bool,
     version: &'static str,
     pending_claims: u64,
+    accrual_mode: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -278,6 +289,9 @@ CREATE INDEX IF NOT EXISTS idx_claims_created ON claims(created_at);
 fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     let conn = Connection::open(path)?;
     conn.execute_batch(SCHEMA)?;
+    // Accrual ledger tables (step 1 of docs/SCALING_PAYOUTS.md). Additive
+    // and idempotent; harmless when accrual mode is off.
+    pedalshield_treasury::accrual::ensure_schema(&conn)?;
     Ok(conn)
 }
 
@@ -437,6 +451,22 @@ fn count_pending(conn: &Connection) -> Result<u64, rusqlite::Error> {
     Ok(n as u64)
 }
 
+fn fetch_accrual_balance(conn: &Connection, ua: &str) -> Result<Option<BalanceInfo>, rusqlite::Error> {
+    let row: Option<(i64, i64, i64)> = conn
+        .query_row(
+            "SELECT pending_zat, lifetime_zat, rides_count FROM balances WHERE recipient_ua = ?1",
+            params![ua],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    Ok(row.map(|(p, l, c)| BalanceInfo {
+        recipient_ua: ua.to_string(),
+        pending_zatoshi: p as u64,
+        lifetime_zatoshi: l as u64,
+        rides_count: c as u64,
+    }))
+}
+
 fn row_to_claim(row: &rusqlite::Row) -> rusqlite::Result<ClaimRow> {
     Ok(ClaimRow {
         id: row.get(0)?,
@@ -466,6 +496,7 @@ async fn healthz(State(state): State<AppState>) -> Result<Json<Health>, AppError
         ok: true,
         version: env!("CARGO_PKG_VERSION"),
         pending_claims: pending,
+        accrual_mode: state.accrual_mode,
     }))
 }
 
@@ -552,6 +583,26 @@ async fn post_claim(
         meters = row.distance_meters,
         "claim accepted"
     );
+
+    // Accrual path (docs/SCALING_PAYOUTS.md, step 1): credit the reward to
+    // an off-chain balance instead of firing a per-ride spend. No on-chain
+    // action, no ZIP-317 fee per ride. Settlement happens later, once the
+    // balance crosses the floor, via the sweep / `/withdraw`. Takes
+    // precedence over the per-claim auto-payout path.
+    if state.accrual_mode {
+        let amount = compute_payout(row.distance_meters, state.zat_per_km, state.max_payout_zat);
+        let conn = state.db.lock().unwrap();
+        pedalshield_treasury::accrual::accrue(&conn, &id, &row.recipient_ua, amount, now)
+            .map_err(|e| AppError::Internal(format!("accrue: {e}")))?;
+        tracing::info!(claim_id = %id, amount, "claim accrued (no on-chain action)");
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(ClaimAcceptResponse {
+                status: "accrued",
+                claim_id: id,
+            }),
+        ));
+    }
 
     // Fully autonomous path: fire the payout in the background and ACK
     // immediately (building + proving + broadcasting takes a few seconds).
@@ -1079,6 +1130,169 @@ async fn approve_handler(
 }
 
 // ---------------------------------------------------------------------
+// Accrual settlement (docs/SCALING_PAYOUTS.md)
+// ---------------------------------------------------------------------
+
+use pedalshield_treasury::accrual;
+
+/// Settle a single recipient's reserved balance on-chain. Caller must have
+/// already won `begin_settling` and pass the reserved `amount`. Reuses the
+/// proven spend path; serialized via `payout_lock` so concurrent settles
+/// never select the same note. Reverts the reservation on any failure.
+async fn settle_one(
+    state: &AppState,
+    recipient_ua: &str,
+    amount: u64,
+) -> Result<String, String> {
+    let sk = match load_spending_key(state) {
+        Ok(sk) => sk,
+        Err(e) => {
+            let conn = state.db.lock().unwrap();
+            let _ = accrual::revert_settling(&conn, recipient_ua, now_secs());
+            return Err(e);
+        }
+    };
+
+    let result = {
+        let _guard = state.payout_lock.lock().await;
+        pedalshield_treasury::spend::spender::pay(
+            &state.lightwalletd,
+            &sk,
+            recipient_ua,
+            amount,
+            state.birthday,
+            true, // broadcast
+        )
+        .await
+    };
+
+    let now = now_secs();
+    match result {
+        Ok(r) if matches!(r.broadcast, Some((0, _))) => {
+            let conn = state.db.lock().unwrap();
+            accrual::mark_settled(&conn, recipient_ua, amount, &r.txid_hex, now)
+                .map_err(|e| format!("db: {e}"))?;
+            tracing::info!(recipient = %recipient_ua, txid = %r.txid_hex, amount, "balance settled");
+            Ok(r.txid_hex)
+        }
+        other => {
+            let conn = state.db.lock().unwrap();
+            let _ = accrual::revert_settling(&conn, recipient_ua, now);
+            Err(match other {
+                Ok(r) => format!("broadcast not accepted: {:?}", r.broadcast),
+                Err(e) => format!("settle failed: {e}"),
+            })
+        }
+    }
+}
+
+/// One settlement sweep: pay every balance at or above the floor, up to
+/// `max` recipients. Returns (settled_count, total_zatoshi). Forward path
+/// to batching: today one spend per recipient; later one multi-output tx
+/// over this same due-list.
+async fn run_settlement_sweep(state: &AppState, max: usize) -> (usize, u64) {
+    let due = {
+        let conn = state.db.lock().unwrap();
+        accrual::due_for_settlement(&conn, state.payout_floor_zat, max)
+            .unwrap_or_default()
+    };
+    let mut settled = 0usize;
+    let mut total = 0u64;
+    for d in due {
+        let reserved = {
+            let conn = state.db.lock().unwrap();
+            accrual::begin_settling(&conn, &d.recipient_ua, now_secs())
+                .ok()
+                .flatten()
+        };
+        let Some(amount) = reserved else { continue }; // lost the race; skip
+        match settle_one(state, &d.recipient_ua, amount).await {
+            Ok(_) => {
+                settled += 1;
+                total += amount;
+            }
+            Err(e) => tracing::warn!(recipient = %d.recipient_ua, "settle skipped: {e}"),
+        }
+    }
+    (settled, total)
+}
+
+#[derive(Debug, Serialize)]
+struct SettleResponse {
+    settled: usize,
+    total_zatoshi: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct BalanceInfo {
+    recipient_ua: String,
+    pending_zatoshi: u64,
+    lifetime_zatoshi: u64,
+    rides_count: u64,
+}
+
+/// Admin trigger: run one settlement sweep now.
+async fn settle_handler(
+    State(state): State<AppState>,
+) -> Result<Json<SettleResponse>, AppError> {
+    if !state.accrual_mode {
+        return Err(AppError::BadRequest("accrual mode is off".into()));
+    }
+    let (settled, total_zatoshi) = run_settlement_sweep(&state, 100).await;
+    Ok(Json(SettleResponse { settled, total_zatoshi }))
+}
+
+/// Rider-initiated withdraw: settle this recipient's full pending balance
+/// now, ignoring the floor.
+async fn withdraw_handler(
+    State(state): State<AppState>,
+    Path(ua): Path<String>,
+) -> Result<Json<PayoutResponse>, AppError> {
+    if !state.accrual_mode {
+        return Err(AppError::BadRequest("accrual mode is off".into()));
+    }
+    validate_ua(&ua)?;
+    let reserved = {
+        let conn = state.db.lock().unwrap();
+        accrual::begin_settling(&conn, &ua, now_secs())
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?
+    };
+    let Some(amount) = reserved else {
+        return Err(AppError::BadRequest("no pending balance to withdraw".into()));
+    };
+    match settle_one(&state, &ua, amount).await {
+        Ok(txid) => Ok(Json(PayoutResponse {
+            status: "paid",
+            claim_id: ua,
+            amount_zatoshi: amount,
+            txid,
+        })),
+        Err(e) => Err(AppError::Internal(e)),
+    }
+}
+
+async fn balance_handler(
+    State(state): State<AppState>,
+    Path(ua): Path<String>,
+) -> Result<Json<BalanceInfo>, AppError> {
+    validate_ua(&ua)?;
+    let info = {
+        let conn = state.db.lock().unwrap();
+        fetch_accrual_balance(&conn, &ua)
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?
+    };
+    // If never accrued anything, return zeros rather than 404 so the
+    // mobile can render "0.00000000 ZEC accrued" cleanly.
+    let info = info.unwrap_or(BalanceInfo {
+        recipient_ua: ua,
+        pending_zatoshi: 0,
+        lifetime_zatoshi: 0,
+        rides_count: 0,
+    });
+    Ok(Json(info))
+}
+
+// ---------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------
 
@@ -1132,6 +1346,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auto_payout = env::var("PEDALSHIELD_AUTO_PAYOUT")
         .map(|s| !matches!(s.as_str(), "0" | "false" | "no"))
         .unwrap_or(true);
+    // Accrual mode (docs/SCALING_PAYOUTS.md). Off by default — the proven
+    // per-claim autonomous path stays the default until explicitly enabled.
+    let accrual_mode = env::var("PEDAL_ACCRUAL")
+        .map(|s| matches!(s.as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false);
+    let payout_floor_zat: u64 = env::var("PEDAL_FLOOR_ZAT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(accrual::DEFAULT_FLOOR_ZAT); // 0.01 ZEC
+    // How often the background sweep settles due balances, in seconds.
+    let settle_interval_secs: u64 = env::var("PEDAL_SETTLE_INTERVAL_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(300);
 
     let conn = open_db(&db_path)?;
     let state = AppState {
@@ -1144,7 +1372,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_payout_zat,
         payout_lock: Arc::new(tokio::sync::Mutex::new(())),
         auto_payout,
+        accrual_mode,
+        payout_floor_zat,
     };
+
+    // Background settlement sweep: only runs in accrual mode.
+    if accrual_mode {
+        let sweep_state = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(
+                std::time::Duration::from_secs(settle_interval_secs.max(1)),
+            );
+            loop {
+                tick.tick().await;
+                let (n, total) = run_settlement_sweep(&sweep_state, 100).await;
+                if n > 0 {
+                    tracing::info!(settled = n, total_zatoshi = total, "settlement sweep");
+                }
+            }
+        });
+    }
 
     let app = Router::new()
         .route("/healthz", get(healthz))
@@ -1155,6 +1402,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/claims/:id/mark-paid", post(mark_paid_handler))
         .route("/claims/:id/approve", post(approve_handler))
         .route("/claims/:id/reject", post(reject_handler))
+        .route("/settle", post(settle_handler))
+        .route("/withdraw/:ua", post(withdraw_handler))
+        .route("/balance/:ua", get(balance_handler))
         .route("/admin", get(admin_page))
         .layer(TraceLayer::new_for_http())
         .with_state(state);

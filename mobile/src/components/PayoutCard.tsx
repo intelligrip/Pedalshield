@@ -12,14 +12,15 @@ import { Button } from './Button.tsx';
 import { Card } from './Card.tsx';
 import { ShareCard } from './ShareCard.tsx';
 import { theme } from '../app/theme.ts';
-import { submitClaim, pollClaim } from '../lib/api.ts';
+import { submitClaim, pollClaim, getAccrualBalance, AccrualBalance } from '../lib/api.ts';
 import {
+  BACKEND_URL,
   EXPLORER_TX_BASE,
   getRecipientUA,
   setRecipientUA,
 } from '../lib/config.ts';
 
-type Phase = 'idle' | 'submitting' | 'polling' | 'paid' | 'error';
+type Phase = 'idle' | 'submitting' | 'polling' | 'paid' | 'accrued' | 'error';
 
 const PIPELINE = [
   'Claim sent — route stayed on your phone',
@@ -107,8 +108,37 @@ export function PayoutCard({
   const [message, setMessage] = useState('');
   const [txid, setTxid] = useState<string | null>(null);
   const [stage, setStage] = useState(0);
+  const [accruedBalance, setAccruedBalance] = useState<AccrualBalance | null>(null);
 
   const busy = phase === 'submitting' || phase === 'polling';
+
+  async function onWithdraw() {
+    const recip = ua.trim();
+    if (!recip.startsWith('u1')) return;
+    setPhase('submitting');
+    setMessage('Settling your accrued balance on-chain...');
+    try {
+      // POST /withdraw/:ua reuses the settlement path (real Orchard spend)
+      const res = await fetch(`${BACKEND_URL}/withdraw/${encodeURIComponent(recip)}`, {
+        method: 'POST',
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text);
+      const data = JSON.parse(text) as { txid?: string; status?: string };
+      if (data.txid) {
+        setTxid(data.txid);
+        setPhase('paid');
+        setAccruedBalance(null);
+        setMessage('');
+      } else {
+        setPhase('accrued');
+        setMessage('Withdraw accepted; check status shortly.');
+      }
+    } catch (e) {
+      setPhase('accrued');
+      setMessage('Withdraw failed: ' + String((e as Error)?.message ?? e));
+    }
+  }
 
   async function onClaim() {
     const recip = ua.trim();
@@ -123,12 +153,20 @@ export function PayoutCard({
     setPhase('submitting');
     setMessage('');
     try {
-      await submitClaim({
+      const ack = await submitClaim({
         claim_id: rideId,
         recipient_ua: recip,
         distance_meters: Math.max(1, Math.round(distanceM)),
         signature: 'demo-sig',
       });
+      if (ack.status === 'accrued') {
+        // Accrual mode: no per-ride on-chain payout. Show balance + option to force settle.
+        const bal = await getAccrualBalance(recip);
+        setAccruedBalance(bal);
+        setPhase('accrued');
+        setMessage('');
+        return;
+      }
       setPhase('polling');
       setStage(1);
       const row = await pollClaim(rideId, {
@@ -180,6 +218,48 @@ export function PayoutCard({
             integrityScore={integrityScore}
             txid={txid}
           />
+        </>
+      ) : phase === 'accrued' ? (
+        <>
+          <Text style={styles.paidLine}>
+            ✓ Ride accrued. No on-chain spend this ride — your earnings
+            accumulate off-chain (treasury fee ~0.5% at the 0.01 ZEC floor).
+          </Text>
+          {accruedBalance ? (
+            <View style={{ marginBottom: theme.space.md }}>
+              <Text style={styles.txidLabel}>Your accrued balance</Text>
+              <Text style={styles.txid} selectable>
+                {(accruedBalance.pending_zatoshi / 1e8).toFixed(8)} ZEC
+                {'  '}
+                <Text style={{ color: theme.color.textDim }}>
+                  (lifetime {(accruedBalance.lifetime_zatoshi / 1e8).toFixed(8)} ZEC · {accruedBalance.rides_count} rides)
+                </Text>
+              </Text>
+            </View>
+          ) : null}
+          <Text style={styles.help}>
+            Settlements happen automatically in batches once balances cross
+            the floor, or tap below to settle this UA now (forces a real
+            shielded payout).
+          </Text>
+          <Button
+            label="Settle / withdraw now (real payout)"
+            size="lg"
+            onPress={onWithdraw}
+            disabled={phase === 'submitting'}
+          />
+          {message ? (
+            <View style={styles.statusRow}>
+              <Text
+                style={[
+                  styles.status,
+                  phase === 'error' && { color: theme.color.danger },
+                ]}
+              >
+                {message}
+              </Text>
+            </View>
+          ) : null}
         </>
       ) : busy ? (
         <Pipeline active={stage} done={false} />
