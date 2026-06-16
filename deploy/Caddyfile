@@ -1,6 +1,6 @@
 # EDIT the domain, then: sudo systemctl reload caddy
 # Caddy fetches/renews TLS automatically.
-api.pedalshield.example.com {
+api.pedalshield.app {
 	reverse_proxy 127.0.0.1:8787
 
 	# modest hardening

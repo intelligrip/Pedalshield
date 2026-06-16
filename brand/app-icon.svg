@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#15a06f"/><stop offset="1" stop-color="#0b5740"/></linearGradient></defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<path d="M 512 150 C 682.5 150, 822.0 224.0, 822.0 372.0 L 822.0 534.8 C 822.0 727.2, 651.5 838.2, 512 890 C 372.5 838.2, 202.0 727.2, 202.0 534.8 L 202.0 372.0 C 202.0 224.0, 341.5 150, 512 150 Z" fill="#FFFFFF"/>
+<rect x="705.4" y="487.0" width="26" height="26" rx="6" fill="#12805C" transform="rotate(90.0 718.4 500.0)"/>
+<rect x="657.1" y="619.7" width="26" height="26" rx="6" fill="#12805C" transform="rotate(130.0 670.1 632.7)"/>
+<rect x="534.8" y="690.3" width="26" height="26" rx="6" fill="#12805C" transform="rotate(170.0 547.8 703.3)"/>
+<rect x="395.8" y="665.7" width="26" height="26" rx="6" fill="#12805C" transform="rotate(210.0 408.8 678.7)"/>
+<rect x="305.0" y="557.6" width="26" height="26" rx="6" fill="#12805C" transform="rotate(250.0 318.0 570.6)"/>
+<rect x="305.0" y="416.4" width="26" height="26" rx="6" fill="#12805C" transform="rotate(290.0 318.0 429.4)"/>
+<rect x="395.8" y="308.3" width="26" height="26" rx="6" fill="#12805C" transform="rotate(330.0 408.8 321.3)"/>
+<rect x="534.8" y="283.7" width="26" height="26" rx="6" fill="#12805C" transform="rotate(370.0 547.8 296.7)"/>
+<rect x="657.1" y="354.3" width="26" height="26" rx="6" fill="#12805C" transform="rotate(410.0 670.1 367.3)"/>
+<circle cx="512" cy="500" r="196" fill="none" stroke="#12805C" stroke-width="70"/>
+<line x1="512" y1="500" x2="512.0" y2="331.0" stroke="#12805C" stroke-width="34" stroke-linecap="round"/>
+<line x1="512" y1="500" x2="672.7" y2="447.8" stroke="#12805C" stroke-width="34" stroke-linecap="round"/>
+<line x1="512" y1="500" x2="611.3" y2="636.7" stroke="#12805C" stroke-width="34" stroke-linecap="round"/>
+<line x1="512" y1="500" x2="412.7" y2="636.7" stroke="#12805C" stroke-width="34" stroke-linecap="round"/>
+<line x1="512" y1="500" x2="351.3" y2="447.8" stroke="#12805C" stroke-width="34" stroke-linecap="round"/>
+<circle cx="512" cy="500" r="70" fill="#12805C"/>
+<circle cx="512" cy="500" r="46" fill="#FFFFFF"/>
+</svg>

@@ -9,6 +9,14 @@
 <meta property="og:title" content="Pedalshield — Ride private. Earn shielded." />
 <meta property="og:description" content="Get paid in private Zcash for real bike rides. Your route never leaves your phone." />
 <meta property="og:type" content="website" />
+<meta property="og:url" content="https://pedalshield.app/" />
+<meta property="og:image" content="https://pedalshield.app/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Pedalshield — Ride private. Earn shielded." />
+<meta name="twitter:description" content="Get paid in private Zcash for real bike rides. Your route never leaves your phone." />
+<meta name="twitter:image" content="https://pedalshield.app/og-image.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -100,6 +108,14 @@
   .wl-ok{display:none;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);border-radius:14px;padding:20px;max-width:480px;margin:0 auto;font-size:1.05rem}
   .wl-ok.show{display:block;animation:fade .4s ease}
   @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .qr-wrap{display:flex;align-items:center;justify-content:center;gap:18px;margin:26px auto 0;max-width:480px;flex-wrap:wrap}
+  #qrcode{background:#fff;padding:10px;border-radius:12px;line-height:0;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+  #qrcode img,#qrcode canvas{display:block;width:128px;height:128px}
+  .qr-text{text-align:left;color:#EAFBF3;font-size:.92rem;max-width:200px}
+  .qr-text strong{display:block;color:#fff;font-size:1rem;margin-bottom:2px}
+  .qr-text span{display:block;color:#BfeBD7;margin-bottom:8px}
+  .qr-dl{display:inline-block;color:#fff;font-weight:600;border-bottom:1px dashed rgba(255,255,255,.6)}
+  .qr-dl:hover{color:#eafff6}
 
   /* footer */
   footer{padding:44px 0;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
@@ -217,6 +233,14 @@
         <button type="submit">Join the waitlist</button>
       </form>
       <div class="wl-ok" id="wlok">🚲 You're on the list! We'll be in touch before launch.</div>
+      <div class="qr-wrap">
+        <div id="qrcode" aria-label="QR code linking to pedalshield.app"></div>
+        <div class="qr-text">
+          <strong>Scan to open on your phone</strong>
+          <span>or share it — point anyone at pedalshield.app</span>
+          <a href="#" id="qrdl" class="qr-dl">↓ Download QR (for flyers &amp; posters)</a>
+        </div>
+      </div>
       <p class="wl-note">Open source · MIT · github.com/intelligrip/Pedalshield</p>
     </div>
   </div>
@@ -270,6 +294,33 @@
       ok.classList.add('show');
     });
   });
+</script>
+
+<!-- QR code: rendered in-browser from a CDN library; points to pedalshield.app -->
+<script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs@gh-pages/qrcode.min.js"></script>
+<script>
+  (function () {
+    var target = document.getElementById('qrcode');
+    if (!target || typeof QRCode === 'undefined') return;
+    var qr = new QRCode(target, {
+      text: 'https://pedalshield.app',
+      width: 256, height: 256,
+      colorDark: '#12805C', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    // Download button: grab the generated canvas/img as a PNG
+    var dl = document.getElementById('qrdl');
+    if (dl) dl.addEventListener('click', function (e) {
+      e.preventDefault();
+      var canvas = target.querySelector('canvas');
+      var url = canvas ? canvas.toDataURL('image/png')
+                       : (target.querySelector('img') || {}).src;
+      if (!url) return;
+      var a = document.createElement('a');
+      a.href = url; a.download = 'pedalshield-qr.png';
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+  })();
 </script>
 </body>
 </html>
