@@ -45,6 +45,9 @@
         "projectId": "b19e40fc-4c49-4d25-8f54-e59cee317dae"
       }
     },
-    "owner": "sbnewman"
+    "owner": "sbnewman",
+    "plugins": [
+      "expo-status-bar"
+    ]
   }
 }
