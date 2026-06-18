@@ -19,6 +19,7 @@ import {
   getRecipientUA,
   setRecipientUA,
 } from '../lib/config.ts';
+import { validateZcashUA } from '../wallet/connectedWallet.ts';
 
 type Phase = 'idle' | 'submitting' | 'polling' | 'paid' | 'accrued' | 'error';
 
@@ -142,12 +143,15 @@ export function PayoutCard({
 
   async function onClaim() {
     const recip = ua.trim();
-    if (!recip.startsWith('u1') || recip.length < 80) {
+    const check = validateZcashUA(recip);
+    if (!check.ok) {
       setPhase('error');
-      setMessage('Paste a valid Zashi Unified Address (starts with u1).');
+      setMessage(check.reason ?? 'Paste a valid Zcash Unified Address (starts with u1).');
       return;
     }
-    setRecipientUA(recip);
+    // Persist the rider's connected wallet (survives restarts; rejects if
+    // invalid, but we already validated above).
+    setRecipientUA(recip).catch(() => {});
     setTxid(null);
     setStage(0);
     setPhase('submitting');
@@ -259,14 +263,14 @@ export function PayoutCard({
             label="Settle / withdraw now (real payout)"
             size="lg"
             onPress={onWithdraw}
-            disabled={phase === 'submitting'}
+            disabled={(phase as Phase) === 'submitting'}
           />
           {message ? (
             <View style={styles.statusRow}>
               <Text
                 style={[
                   styles.status,
-                  phase === 'error' && { color: theme.color.danger },
+                  (phase as Phase) === 'error' && { color: theme.color.danger },
                 ]}
               >
                 {message}
@@ -305,7 +309,7 @@ export function PayoutCard({
               <Text
                 style={[
                   styles.status,
-                  phase === 'error' && { color: theme.color.danger },
+                  (phase as Phase) === 'error' && { color: theme.color.danger },
                 ]}
               >
                 {message}

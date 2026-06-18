@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { Navigation } from './src/app/Navigation.tsx';
 import { theme } from './src/app/theme.ts';
 import { MockWallet, setWallet, zecToZatoshi } from './src/wallet/index.ts';
+import { loadConnectedWallet } from './src/wallet/connectedWallet.ts';
 
 const navTheme = {
   dark: true,
@@ -23,6 +24,11 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Restore the rider's connected (bring-your-own) Zcash address from
+    // disk so the vault + payouts know where to send before any screen
+    // renders. Best-effort: failure just means "not connected yet".
+    loadConnectedWallet().catch(() => {});
+
     // Boot the wallet. MockWallet for simulator / dev; swap in
     // NativeWallet from ./src/wallet/nativeWallet for device builds.
     const wallet = new MockWallet({

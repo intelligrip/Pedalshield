@@ -29,14 +29,23 @@ export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/
 export const DEFAULT_ZAT_PER_KM = 20_000;
 
 /**
- * Session-scoped recipient Unified Address. The rider pastes their Zashi
- * UA once; subsequent rides prefill it. Not persisted to disk (paste
- * again after an app restart) to keep the demo simple and key-free.
+ * Recipient Unified Address = the rider's connected (bring-your-own) Zcash
+ * wallet. Source of truth + persistence live in
+ * `../wallet/connectedWallet.ts`; these helpers are thin sync accessors so
+ * existing call sites (Home, Ride, Leaderboard) keep working unchanged.
+ * The address now survives app restarts (AsyncStorage) — no more re-pasting.
  */
-let _recipientUA = '';
+import { getConnectedUA, setConnectedUA } from '../wallet/connectedWallet.ts';
+
 export function getRecipientUA(): string {
-  return _recipientUA;
+  return getConnectedUA();
 }
-export function setRecipientUA(ua: string): void {
-  _recipientUA = ua.trim();
+
+/**
+ * Persist the rider's recipient UA. Resolves once written; callers that
+ * don't await still see the in-memory update synchronously via
+ * getRecipientUA(). Rejects (with a human-readable reason) if invalid.
+ */
+export function setRecipientUA(ua: string): Promise<void> {
+  return setConnectedUA(ua);
 }

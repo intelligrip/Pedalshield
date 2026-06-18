@@ -7,76 +7,101 @@
 
 ## PR title
 
-`Hackathon/2026: add Pedalshield — privacy-first bike-to-earn (Games track)`
+`Hackathon/2026: add Pedalshield — privacy-first bike-to-earn with live autonomous shielded payouts (Games track)`
 
 ## PR description
 
 **Project:** Pedalshield — *Ride private. Earn shielded.*
 
-A mobile bike-to-earn game built on Zcash. Cyclists track real-world rides; the phone verifies them locally — **routes never leave the device** — and shielded ZEC drops into the in-app vault from a FROST 2-of-3 community treasury.
+A mobile bike-to-earn game on Zcash. Cyclists track real rides; the phone
+verifies them **entirely on-device** — the GPS route never leaves the phone
+(enforced by a unit test, not a privacy policy) — and an **autonomous backend
+pays real shielded ZEC on Zcash mainnet**, with no human in the loop.
 
 **Track:** Games
 
-**Demo video:** `<URL — landing before deadline>`
+**Demo video:** `<URL — landing before deadline: real ride → on-device verify → shielded payout → txid in explorer>`
+
+### What's live right now (not a promise — a running system)
+
+The full loop runs end-to-end on a **deployed, internet-facing backend**:
+
+> real ride → on-device verification → `POST /claim` → autonomous hand-rolled
+> Orchard shielded spend (build → prove → SIGHASH → sign → broadcast) → **real
+> mainnet txid**.
+
+- **Live backend:** `https://api.pedalshield.app/healthz` returns `{"ok":true,...}`.
+- **Reproducible mainnet payouts (real txids):**
+  - `a64f2b159e92558b7070d25f0f708ca99b3401ed9ae23ac626c2ea2a2db2f1d8` — a payout from the **deployed** system, triggered by a verified ride.
+  - `2a849aca…b264ab`, `f1a3bacc…c10ba6`, `ef0e2a57…060587` — earlier autonomous Orchard payouts.
+- **NU6.2-current:** the entire stack was re-pinned within days of the June 2026 emergency upgrade; the live consensus branch id is `0x5437f330`.
+- **Secured:** operator endpoints (`/approve`, `/claims`, `/withdraw`, `/settle`, `/admin`) are gated behind a bearer token; they fail closed.
+
+Look up any txid at `mainnet.zcashexplorer.app/transactions/<txid>`.
 
 **Repository contents:**
 
-- `mobile/` — React Native + Expo app with on-device verification engine, Wallet layer (Mock + native bridges), and three screens (Home / Ride / Privacy). 34 passing unit tests.
-- `zcash-service/` — Rust workspace running a real FROST 2-of-3 threshold-signing ceremony via `frost-ed25519`. `cargo run --bin treasury_demo` produces a verified aggregated signature end-to-end. Integration tests cover keygen, anomaly checks, ledger, and full ceremony pipeline.
-- `mobile/native/` — Kotlin + Swift native module skeletons bridging React Native to `cash.z.ecc.android.sdk` (Android) and `ZcashLightClientKit` (iOS).
-- `docs/` — `ARCHITECTURE.md` (Mermaid diagram + layered anti-cheat write-up), `DEMO_SCRIPT.md`, `ROADMAP.md`.
+- `zcash-service/` — Rust workspace. The **hand-rolled, SDK-free Orchard spend pipeline** (`src/spend/` — tree seeding from `GetTreeState`, scan-to-tip, note selection, v5 `TransactionBuilder`, ZIP-317 fees) and the `axum` backend (`bin/backend.rs`, autonomous `run_payout`). Plus `treasury_balance`, `treasury_wallet`, and a FROST 2-of-3 ceremony (`frost_coordinator.rs`).
+- `mobile/` — React Native + Expo (SDK 56) app: on-device verification engine (the privacy seam), ride state machine, wallet layer, Home / Ride / Privacy screens. iOS build is App-Store-accepted and on TestFlight.
+- `deploy/` — VPS deploy kit (systemd + Caddy + auto-HTTPS), used to deploy the live backend above.
+- `docs/` — `ARCHITECTURE.md`, `DEMO_SCRIPT.md`, `ROADMAP.md`, `30_DAY_LAUNCH_PLAN.md`.
 
 **Hackathon rules compliance:**
 
 | Rule | Status |
 |---|---|
-| 1. Interact with Zcash mainnet | Architecture and treasury target mainnet; the demo video shows a real Orchard payout. The submission roadmaps the final FROST-RedPallas swap (v0.2) explicitly. |
+| 1. Interact with Zcash mainnet | **Done — live and reproducible.** Autonomous Orchard shielded payouts on mainnet, real txids above, from a deployed backend. |
 | 2. One project per team | Yes |
-| 3. Clear setup + usage docs | `README.md` (60-second quick start), `mobile/native/README.md`, `zcash-service/README.md` |
+| 3. Clear setup + usage docs | `README.md` (60-second quick start), `deploy/README.md`, `zcash-service/README.md` |
 | 4. Open-source licensing | MIT — see `LICENSE` |
-| 5. Respect privacy, security, community guidelines | Privacy is the product. Layered anti-cheat is documented honestly, including what it does *not* catch. |
+| 5. Respect privacy, security, community guidelines | Privacy is the product (route never leaves the phone, unit-tested). Anti-cheat is layered and documented honestly, including what it does *not* catch. Operator endpoints are auth-gated. |
 
-**How to verify the submission in 60 seconds:**
+**Verify it yourself:**
 
 ```bash
-# 34 passing tests including the privacy assertion
-cd Pedalshield/mobile
-node --test src/verification/__tests__/*.test.ts \
-              src/wallet/__tests__/*.test.ts \
-              src/ride/__tests__/*.test.ts
+# 1. The live backend answers
+curl -s https://api.pedalshield.app/healthz
 
-# real FROST ceremony with a verifiable signature
-cd ../zcash-service
-cargo run --bin treasury_demo
+# 2. A real autonomous mainnet payout (open in a browser)
+#    mainnet.zcashexplorer.app/transactions/a64f2b159e92558b7070d25f0f708ca99b3401ed9ae23ac626c2ea2a2db2f1d8
 
-# the app
-cd ../mobile && npm install && npx expo start
+# 3. The privacy + anti-cheat unit tests (route never leaves the phone)
+cd Pedalshield/mobile && node --test src/verification/__tests__/*.test.ts
+
+# 4. The backend speaks current consensus
+cd ../zcash-service && cargo run --bin treasury_ping
 ```
 
-**Differentiation from prior "Ride to Earn" proposals:**
+## What's shipped vs honestly roadmap
 
-A December 2025 Zcash forum proposal targeted ride-to-earn via custom hardware grips with on-device Rust ZKPs. Pedalshield is **software-only, mobile-first, game-first**: phone-sensor verification with layered anti-cheat, a FROST-secured treasury, and a deliberately joyful game loop calibrated for casual riders. We use ZK as a privacy primitive (Tier 2 roadmap) rather than as the anti-cheat backbone, and we say so in the security doc.
+We name our limits out loud — that's the point.
 
-## Maintainer notes for the ZecHub review
+- **Shipped:** autonomous Orchard mainnet payouts (proven, reproducible, deployed, secured); on-device verification + layered anti-cheat; the privacy seam (unit-tested); the iOS app on TestFlight; **non-custodial rider wallet** — riders connect a Zcash wallet they already control (Zashi/Zodl) by entering its Unified Address, and verified rides pay real shielded ZEC straight to it (validated + persisted on-device; `mobile/src/wallet/connectedWallet.ts`, unit-tested).
+- **Roadmap (named, not hidden):**
+  - **In-app rider wallet (optional).** Riders already receive real ZEC to their own external wallet (above). A native in-app wallet — the bridge to `ZcashLightClientKit` / `cash.z.ecc.android.sdk`, so the app itself holds a shielded balance — is a convenience enhancement, not a blocker. See `docs/RN_DEV_BRIEF.md`.
+  - **FROST-authorized spends.** The Ed25519 FROST ceremony works (`treasury_demo`); treasury spends today use a single hot key (capped, ≤2 ZEC hot). The RedPallas/ZIP-312 swap for shielded spend-auth is roadmap.
+  - **ZK proof-of-distance** for trustless verified-distance claims (Tier 2).
+  - **Ironwood pool migration** (Orchard successor, ~late July 2026) — budgeted.
 
-- **Verifiable claims table** in `README.md` maps every product claim to the file (test, doc, or source) that proves it. Start there.
-- The privacy property is enforced by a unit test, not a privacy policy. `mobile/src/verification/__tests__/rideVerifier.test.ts` rejects `lat`, `lon`, `accel`, `gyro`, `barometer`, `pedometer`, `pressure` substrings in the outgoing `ClaimPayload`.
-- `treasury_demo` produces a real Ed25519 FROST signature. The RedPallas ciphersuite swap for Zcash spend auth is a type-parameter change, documented in `zcash-service/README.md` "ZIP-312 path".
-- We were intentionally conservative about what to claim. Every uncertain library version, every deferred chunk, every limit of the anti-cheat model is named in the docs.
+## Honest-claims rule (held throughout)
+
+Payouts are small (~0.0002 ZEC/km, capped). Privacy is the product, not yield.
+ZK route proofs are roadmap, not live. Anti-cheat is layered, not perfect. No
+token. Every uncertain version and deferred chunk is named in the docs.
 
 ## Submission checklist
 
-- [x] Working prototype (verification engine, wallet bridge, FROST treasury, mobile app shell)
+- [x] Working prototype — **live deployed backend with reproducible mainnet payouts**
 - [x] Open-source licensed (MIT)
 - [x] README with setup + usage instructions
-- [x] Demo script (`docs/DEMO_SCRIPT.md`)
-- [x] Architecture diagram + security write-up (`docs/ARCHITECTURE.md`)
-- [x] Submission folder structure for `Hackathon/2026/Pedalshield`
-- [ ] Demo video recorded and uploaded
+- [x] Architecture diagram + honest security write-up (`docs/ARCHITECTURE.md`)
+- [x] Real shielded mainnet payout executed (txids above)
+- [x] iOS app built + on TestFlight
+- [ ] Demo video recorded and uploaded (real ride → verify → payout → txid)
 - [ ] Demo video posted in Zcash Global Discord
-- [ ] Real shielded mainnet payout executed and shown in demo (v0.2 milestone, before July 15)
+- [ ] PR opened against the ZecHub 2026 folder
 
 ## Contact
 
-- GitHub: see commit history
-- Discord: posting in `#hackathon` channel of Zcash Global with the video before July 15, 2026 UTC.
+- GitHub: `github.com/intelligrip/Pedalshield`
+- Discord: posting in `#hackathon` of Zcash Global with the video before July 15, 2026 UTC.

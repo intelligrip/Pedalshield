@@ -5,12 +5,11 @@ import { MainnetStatusChip } from '../components/MainnetStatusChip.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
-import { getWallet } from '../wallet/walletManager.ts';
-import { formatZec, shortAddress } from '../lib/format.ts';
+import { ConnectWalletCard } from '../components/ConnectWalletCard.tsx';
 import { DISTANCE_UNIT, formatRate } from '../lib/units.ts';
 import { getAccrualBalance, getTreasuryInfo } from '../lib/api.ts';
-import { DEFAULT_ZAT_PER_KM, getRecipientUA } from '../lib/config.ts';
-import type { Balance } from '../wallet/types.ts';
+import { DEFAULT_ZAT_PER_KM } from '../lib/config.ts';
+import { onConnectedUAChange } from '../wallet/connectedWallet.ts';
 
 /** ZEC string from a zatoshi number, trimmed to 8 dp without trailing zeros. */
 function zecFromZat(zat: number): string {
@@ -19,23 +18,12 @@ function zecFromZat(zat: number): string {
 }
 
 export function HomeScreen({ navigation }: { navigation: any }) {
-  const [balance, setBalance] = useState<Balance>({
-    verifiedZatoshi: 0n,
-    pendingZatoshi: 0n,
-    totalZatoshi: 0n,
-  });
-  const [address, setAddress] = useState<string>('');
-  const [streakDays, setStreakDays] = useState<number>(4);
+  const [streakDays] = useState<number>(4);
   const [zatPerKm, setZatPerKm] = useState<number>(DEFAULT_ZAT_PER_KM);
   const [lifetimeZat, setLifetimeZat] = useState<number | null>(null);
   const [ridesCount, setRidesCount] = useState<number>(0);
 
   useEffect(() => {
-    const wallet = getWallet();
-    wallet.getBalance().then(setBalance);
-    wallet.getAddress().then((a) => setAddress(a.ua));
-    const off = wallet.onBalanceChange(setBalance);
-
     // Live reward rate from the treasury (falls back to the default).
     getTreasuryInfo()
       .then((info) => {
@@ -43,16 +31,21 @@ export function HomeScreen({ navigation }: { navigation: any }) {
       })
       .catch(() => {});
 
-    // Lifetime rewards for this rider's UA, if they've set one.
-    const ua = getRecipientUA();
-    if (ua.startsWith('u1')) {
-      getAccrualBalance(ua)
-        .then((b) => {
-          setLifetimeZat(b.lifetime_zatoshi);
-          setRidesCount(b.rides_count);
-        })
-        .catch(() => {});
-    }
+    // Lifetime rewards follow the rider's connected wallet — refetch
+    // whenever they connect or change it.
+    const off = onConnectedUAChange((ua) => {
+      if (ua.startsWith('u1')) {
+        getAccrualBalance(ua)
+          .then((b) => {
+            setLifetimeZat(b.lifetime_zatoshi);
+            setRidesCount(b.rides_count);
+          })
+          .catch(() => {});
+      } else {
+        setLifetimeZat(null);
+        setRidesCount(0);
+      }
+    });
     return off;
   }, []);
 
@@ -66,14 +59,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         <Text style={styles.tagline}>Ride private. Earn shielded.</Text>
       </View>
 
-      <Card accent>
-        <Text style={styles.cardLabel}>SHIELDED VAULT</Text>
-        <View style={styles.balanceRow}>
-          <Text style={styles.balanceValue}>{formatZec(balance.verifiedZatoshi)}</Text>
-          <Text style={styles.balanceUnit}>ZEC</Text>
-        </View>
-        <Text style={styles.address}>{address ? shortAddress(address) : 'syncing...'}</Text>
-      </Card>
+      <ConnectWalletCard />
 
       {/* Lifetime rewards — the headline number a rider keeps coming back for. */}
       <Card>
@@ -86,7 +72,7 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         </View>
         <Text style={styles.lifetimeMeta}>
           {lifetimeZat === null
-            ? 'Set your wallet on the Ride tab to start earning'
+            ? 'Connect your wallet above to start earning'
             : `Earned across ${ridesCount} ${ridesCount === 1 ? 'ride' : 'rides'}, all shielded`}
         </Text>
         <View style={styles.rateRow}>
