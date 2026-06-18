@@ -39,8 +39,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::StatusCode,
+    middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -84,6 +85,10 @@ struct AppState {
     /// Payout floor: a recipient's accrued balance settles on-chain once
     /// it reaches this many zatoshi. Default 1_000_000 (0.01 ZEC).
     payout_floor_zat: u64,
+    /// Operator bearer token gating the admin endpoints (/approve, /claims
+    /// list, /withdraw, /settle, /admin). Read from PEDALSHIELD_ADMIN_TOKEN.
+    /// When None/empty those endpoints fail closed (locked).
+    admin_token: Option<String>,
 }
 
 // ---------------------------------------------------------------------
@@ -1130,6 +1135,48 @@ async fn approve_handler(
 }
 
 // ---------------------------------------------------------------------
+// Admin auth: gate operator endpoints behind a bearer token
+// ---------------------------------------------------------------------
+
+/// Constant-time byte comparison so token checks don't leak length/content
+/// via timing.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// Middleware: require `Authorization: Bearer <PEDALSHIELD_ADMIN_TOKEN>` on
+/// the admin endpoints. Fails closed: if no token is configured, all admin
+/// access is denied.
+async fn require_admin(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let Some(expected) = state.admin_token.as_deref().filter(|t| !t.is_empty()) else {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let ok = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|tok| ct_eq(tok.as_bytes(), expected.as_bytes()))
+        .unwrap_or(false);
+    if ok {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
+}
+
+// ---------------------------------------------------------------------
 // Accrual settlement (docs/SCALING_PAYOUTS.md)
 // ---------------------------------------------------------------------
 
@@ -1361,6 +1408,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(300);
 
+    let admin_token = env::var("PEDALSHIELD_ADMIN_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty());
+    if admin_token.is_none() {
+        tracing::warn!(
+            "PEDALSHIELD_ADMIN_TOKEN is not set - admin endpoints (/approve, /claims, /withdraw, /settle, /admin) are LOCKED until you set it."
+        );
+    }
+
     let conn = open_db(&db_path)?;
     let state = AppState {
         db: Arc::new(Mutex::new(conn)),
@@ -1374,6 +1430,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         auto_payout,
         accrual_mode,
         payout_floor_zat,
+        admin_token,
     };
 
     // Background settlement sweep: only runs in accrual mode.
@@ -1393,19 +1450,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    let app = Router::new()
-        .route("/healthz", get(healthz))
-        .route("/treasury/info", get(treasury_info))
-        .route("/claim", post(post_claim))
+    // Admin / operator endpoints: gated behind PEDALSHIELD_ADMIN_TOKEN.
+    // These can move money or read every claim, so they must never be open.
+    let admin = Router::new()
         .route("/claims", get(list_claims_handler))
-        .route("/claims/:id", get(get_claim_handler))
         .route("/claims/:id/mark-paid", post(mark_paid_handler))
         .route("/claims/:id/approve", post(approve_handler))
         .route("/claims/:id/reject", post(reject_handler))
         .route("/settle", post(settle_handler))
         .route("/withdraw/:ua", post(withdraw_handler))
-        .route("/balance/:ua", get(balance_handler))
         .route("/admin", get(admin_page))
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
+
+    // Public endpoints the app needs: liveness, treasury info, submit a
+    // claim, poll your own claim's status, read a balance.
+    let app = Router::new()
+        .route("/healthz", get(healthz))
+        .route("/treasury/info", get(treasury_info))
+        .route("/claim", post(post_claim))
+        .route("/claims/:id", get(get_claim_handler))
+        .route("/balance/:ua", get(balance_handler))
+        .merge(admin)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

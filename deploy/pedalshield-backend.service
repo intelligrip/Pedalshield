@@ -21,6 +21,10 @@ Environment=PEDALSHIELD_DB=/home/pedal/Pedalshield/zcash-service/pedalshield.sql
 Environment=TREASURY_SPENDING_KEY_FILE=/home/pedal/Pedalshield/zcash-service/treasury-keys/treasury_spending_key.bin
 # EDIT: your treasury UA
 Environment=PEDALSHIELD_TREASURY_UA=u19r0gg89utgp9kcqtdasfyfc6nds5sc6tgzny2sgvrsuyw3z97kkg45h87gufsamfhmyxfykg6amlk3lp0ynlc9wgxx60v9gdsuap0zk9
+# EDIT: operator token gating admin endpoints (/approve, /claims, /withdraw,
+# /settle, /admin). Generate a long random value, e.g.  openssl rand -hex 32
+# Without it set, those endpoints are LOCKED (fail closed).
+Environment=PEDALSHIELD_ADMIN_TOKEN=REPLACE_WITH_A_LONG_RANDOM_TOKEN
 
 # --- Hardening ---
 NoNewPrivileges=true
