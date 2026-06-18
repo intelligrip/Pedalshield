@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — Pedalshield</title>
+<meta name="description" content="How Pedalshield handles your data: your bike route never leaves your phone, and the app is non-custodial." />
+<meta name="robots" content="index,follow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --green:#12805C; --green-d:#0d6147; --green-l:#E3F4EC;
+    --purple:#7C3AED; --ink:#15201C; --muted:#5A6B64;
+    --bg:#F7FBF9; --card:#FFFFFF; --line:#E2EDE8; --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--bg);line-height:1.7;-webkit-font-smoothing:antialiased}
+  h1,h2,.brand{font-family:'Sora',sans-serif;letter-spacing:-.02em}
+  a{color:var(--green)}
+  .wrap{max-width:760px;margin:0 auto;padding:0 24px}
+  nav{border-bottom:1px solid var(--line);background:rgba(247,251,249,.9)}
+  nav .row{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{font-weight:800;font-size:1.3rem;color:var(--ink)}
+  .brand span{color:var(--green)}
+  nav a.back{color:var(--muted);font-weight:500;font-size:.95rem}
+  header.head{padding:54px 0 18px}
+  header.head h1{font-size:clamp(2rem,5vw,2.8rem);font-weight:800}
+  header.head .meta{color:var(--muted);margin-top:10px;font-size:.95rem}
+  .tldr{background:var(--green-l);border:1px solid var(--line);border-left:4px solid var(--green);border-radius:12px;padding:20px 22px;margin:26px 0 8px}
+  .tldr b{color:var(--green-d)}
+  main{padding:14px 0 64px}
+  h2{font-size:1.3rem;margin:38px 0 10px;color:var(--ink)}
+  p{margin:10px 0}
+  ul{margin:10px 0 10px 22px}
+  li{margin:6px 0}
+  .muted{color:var(--muted)}
+  code{background:#fff;border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:.86rem;word-break:break-all}
+  footer{padding:34px 0;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap row">
+    <div class="brand">Pedal<span>shield</span></div>
+    <a class="back" href="/">← Back to site</a>
+  </div>
+</nav>
+
+<header class="head">
+  <div class="wrap">
+    <h1>Privacy Policy</h1>
+    <div class="meta">Effective June 18, 2026 · Pedalshield, by IntelliGrip Industries</div>
+    <div class="tldr">
+      <b>The short version:</b> Your bike route never leaves your phone. Pedalshield is
+      non-custodial — we never hold your keys or your money. There's no account, and we
+      don't sell or trade your data. Ever.
+    </div>
+  </div>
+</header>
+
+<main>
+<div class="wrap">
+
+  <h2>Who we are</h2>
+  <p>Pedalshield is an open-source bike-to-earn app that rewards verified rides with
+  shielded Zcash (ZEC). It is operated by IntelliGrip Industries ("we," "us"). You can
+  reach us any time at <a href="mailto:intelligripindustries@gmail.com">intelligripindustries@gmail.com</a>.</p>
+
+  <h2>Your route stays on your phone</h2>
+  <p>This is the whole point of the app. Your GPS location and motion-sensor data are
+  recorded and verified <b>entirely on your device</b>. We never receive, store, or
+  transmit your route, your coordinates, or your raw sensor data. This is enforced in
+  our code (and unit-tested), not just promised here — you can verify it in our
+  open-source repository at
+  <a href="https://github.com/intelligrip/Pedalshield" target="_blank" rel="noopener">github.com/intelligrip/Pedalshield</a>.</p>
+
+  <h2>What the app actually sends us</h2>
+  <p>When you finish a ride and submit a reward claim, the app sends our backend only:</p>
+  <ul>
+    <li>the verified <b>distance</b> of the ride (a number, e.g. kilometers);</li>
+    <li>an on-device <b>integrity score</b> for the ride (anti-cheat);</li>
+    <li>a random <b>claim/ride identifier</b> and timestamp;</li>
+    <li>the <b>Zcash Unified Address you chose to connect</b>, so we know where to send your reward.</li>
+  </ul>
+  <p class="muted">That's it. No route, no GPS points, no name, no email, no device
+  contacts, no advertising identifiers.</p>
+
+  <h2>We are non-custodial</h2>
+  <p>Pedalshield never holds your funds or your private keys. You connect a Zcash wallet
+  that <b>you</b> already control (such as Zashi) by pasting its public Unified Address.
+  Rewards are sent directly to that address on the Zcash network. A Unified Address is a
+  public receive address; sharing it lets you receive funds and does not expose your
+  keys, balance, or transaction history to us.</p>
+
+  <h2>No account, no sign-in</h2>
+  <p>The app does not require you to create an account, log in, or provide an email,
+  phone number, or any personal identifier to use it.</p>
+
+  <h2>The website waitlist (optional)</h2>
+  <p>If you choose to join the beta waitlist on this website, you give us your email
+  address. We use it only to tell you when Pedalshield is available, and we process it
+  through <a href="https://formspree.io" target="_blank" rel="noopener">Formspree</a>,
+  a form-handling service. We don't sell it or use it for advertising. Ask us to delete
+  it at any time and we will.</p>
+
+  <h2>Service providers we rely on</h2>
+  <ul>
+    <li><b>Zcash network / lightwalletd nodes</b> — to look up balances and broadcast the shielded payment to your address. Transactions on Zcash mainnet are processed using Zcash's shielded protocol.</li>
+    <li><b>Apple TestFlight / App Store</b> — to distribute the app. Apple may collect its own data under <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple's privacy policy</a>.</li>
+    <li><b>Formspree</b> — only if you submit the website waitlist form.</li>
+  </ul>
+  <p>We do <b>not</b> use third-party analytics SDKs, advertising trackers, or social
+  media pixels in the app.</p>
+
+  <h2>Data retention</h2>
+  <p>We keep claim records (distance, integrity score, claim id, recipient address) as
+  needed to issue rewards, prevent abuse, and meet legal obligations, then delete or
+  anonymize them. Waitlist emails are kept until launch or until you ask us to remove
+  them.</p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li>You can disconnect your wallet in the app at any time, which removes the stored address from your device.</li>
+    <li>You can deny or revoke Location and Motion permissions in iOS Settings (the app needs Location to measure a ride).</li>
+    <li>You can ask us to delete your waitlist email or any claim data tied to your address by emailing us.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>Pedalshield is not directed to children under 13, and we do not knowingly collect
+  personal information from them.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If we change how we handle data, we'll update this page and revise the effective
+  date above. Material changes will be announced on the app or website.</p>
+
+  <h2>Contact</h2>
+  <p>Questions, requests, or concerns: <a href="mailto:intelligripindustries@gmail.com">intelligripindustries@gmail.com</a>.</p>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap">© 2026 Pedalshield · IntelliGrip Industries · Ride private. Earn shielded.</div>
+</footer>
+
+</body>
+</html>
