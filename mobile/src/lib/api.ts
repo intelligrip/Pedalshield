@@ -116,3 +116,56 @@ function sleep(ms: number): Promise<void> {
 export async function getAccrualBalance(ua: string): Promise<AccrualBalance> {
   return fetchJson<AccrualBalance>(`${BACKEND_URL}/balance/${encodeURIComponent(ua)}`);
 }
+
+export interface TreasuryInfo {
+  network: string;
+  treasury_ua: string;
+  spending_key_loaded: boolean;
+  lightwalletd_connected: boolean;
+  balance_zatoshi: number | null;
+  /** Reward rate the backend pays, in zatoshi per kilometre. */
+  zat_per_km: number;
+  /** Hard cap on a single ride's reward, in zatoshi. */
+  max_payout_zat: number;
+  notes: string;
+}
+
+/** Fetch treasury info, including the live reward rate (zatoshi per km). */
+export async function getTreasuryInfo(): Promise<TreasuryInfo> {
+  return fetchJson<TreasuryInfo>(`${BACKEND_URL}/treasury/info`);
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  handle: string | null;
+  short_ua: string;
+  zatoshi: number;
+  rides_count: number;
+}
+
+export interface Leaderboard {
+  window: string;
+  entries: LeaderboardEntry[];
+}
+
+/** Fetch the community leaderboard. `window` is 'all' (lifetime) or 'week'. */
+export async function getLeaderboard(
+  window: 'all' | 'week' = 'all',
+  limit = 50,
+): Promise<Leaderboard> {
+  return fetchJson<Leaderboard>(
+    `${BACKEND_URL}/leaderboard?window=${window}&limit=${limit}`,
+  );
+}
+
+/** Set (or update) the rider's chosen display handle for the leaderboard. */
+export async function setHandle(
+  ua: string,
+  handle: string,
+): Promise<{ recipient_ua: string; handle: string }> {
+  return fetchJson(`${BACKEND_URL}/handle/${encodeURIComponent(ua)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ handle }),
+  });
+}

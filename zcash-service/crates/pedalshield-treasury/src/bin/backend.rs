@@ -139,6 +139,11 @@ struct TreasuryInfo {
     spending_key_loaded: bool,
     lightwalletd_connected: bool,
     balance_zatoshi: Option<u64>,
+    /// Reward rate in zatoshi per kilometre. The mobile app uses this to
+    /// show riders exactly how much ZEC they earn per mile / km.
+    zat_per_km: u64,
+    /// Hard cap on any single ride's reward, in zatoshi.
+    max_payout_zat: u64,
     notes: &'static str,
 }
 
@@ -289,6 +294,14 @@ CREATE TABLE IF NOT EXISTS claims (
 
 CREATE INDEX IF NOT EXISTS idx_claims_status ON claims(status);
 CREATE INDEX IF NOT EXISTS idx_claims_created ON claims(created_at);
+
+-- Optional, rider-chosen display name for the community leaderboard.
+-- Keyed by recipient UA; the UA itself stays the source of truth.
+CREATE TABLE IF NOT EXISTS handles (
+    recipient_ua  TEXT PRIMARY KEY,
+    handle        TEXT NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
 ";
 
 fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
@@ -517,6 +530,8 @@ async fn treasury_info(State(state): State<AppState>) -> Json<TreasuryInfo> {
         spending_key_loaded,
         lightwalletd_connected: false,
         balance_zatoshi: None,
+        zat_per_km: state.zat_per_km,
+        max_payout_zat: state.max_payout_zat,
         notes: "v0.5.1 - claim collection only. Lightwalletd + payout \
                 construction land in v0.5.2 / v0.5.3.",
     })
@@ -1278,6 +1293,54 @@ struct BalanceInfo {
     rides_count: u64,
 }
 
+/// One row of the community leaderboard. `zatoshi` is lifetime-earned for
+/// the all-time window, or the sum earned within the window for "week".
+#[derive(Debug, Serialize)]
+struct LeaderboardEntry {
+    rank: u32,
+    /// Rider-chosen handle if set, else `None` (mobile falls back to a
+    /// shortened UA so the board still renders).
+    handle: Option<String>,
+    /// Shortened UA (`u1abcd…wxyz`) — never the full address, for privacy.
+    short_ua: String,
+    zatoshi: u64,
+    rides_count: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct Leaderboard {
+    window: String,
+    entries: Vec<LeaderboardEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LeaderboardQuery {
+    /// "all" (lifetime) | "week" (rolling 7 days). Default "all".
+    window: Option<String>,
+    /// Max rows to return (default 50, max 200).
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SetHandleBody {
+    handle: String,
+}
+
+#[derive(Debug, Serialize)]
+struct HandleResponse {
+    recipient_ua: String,
+    handle: String,
+}
+
+/// Privacy-preserving short form of a UA for public display:
+/// first 8 + last 4 chars, e.g. `u1abcdef…wxyz`.
+fn short_ua(ua: &str) -> String {
+    if ua.len() <= 14 {
+        return ua.to_string();
+    }
+    format!("{}…{}", &ua[..8], &ua[ua.len() - 4..])
+}
+
 /// Admin trigger: run one settlement sweep now.
 async fn settle_handler(
     State(state): State<AppState>,
@@ -1337,6 +1400,135 @@ async fn balance_handler(
         rides_count: 0,
     });
     Ok(Json(info))
+}
+
+/// Set (or update) the rider-chosen display handle for a UA. Public
+/// endpoint: the rider proves ownership by knowing their own UA, same
+/// trust model as the rest of the accrual API for the demo.
+async fn set_handle_handler(
+    State(state): State<AppState>,
+    Path(ua): Path<String>,
+    Json(body): Json<SetHandleBody>,
+) -> Result<Json<HandleResponse>, AppError> {
+    validate_ua(&ua)?;
+    let handle = body.handle.trim().to_string();
+    if handle.is_empty() || handle.chars().count() > 24 {
+        return Err(AppError::BadRequest(
+            "handle must be 1-24 characters".into(),
+        ));
+    }
+    // Keep it to printable, non-control characters; no newlines in a board.
+    if handle.chars().any(|c| c.is_control()) {
+        return Err(AppError::BadRequest(
+            "handle contains invalid characters".into(),
+        ));
+    }
+    {
+        let conn = state.db.lock().unwrap();
+        conn.execute(
+            "INSERT INTO handles (recipient_ua, handle, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(recipient_ua) DO UPDATE SET
+                handle = excluded.handle,
+                updated_at = excluded.updated_at",
+            params![ua, handle, now_secs() as i64],
+        )
+        .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+    }
+    Ok(Json(HandleResponse {
+        recipient_ua: ua,
+        handle,
+    }))
+}
+
+/// Community leaderboard: top riders by ZEC earned. `window=all` ranks by
+/// lifetime balance; `window=week` ranks by reward accrued in the last 7
+/// days (from the append-only `accruals` audit log). Full UAs are never
+/// returned — only a rider-chosen handle and a shortened UA.
+async fn leaderboard_handler(
+    State(state): State<AppState>,
+    Query(q): Query<LeaderboardQuery>,
+) -> Result<Json<Leaderboard>, AppError> {
+    let window = q.window.as_deref().unwrap_or("all").to_string();
+    let limit = q.limit.unwrap_or(50).clamp(1, 200) as i64;
+
+    let rows: Vec<(String, u64, u64)> = {
+        let conn = state.db.lock().unwrap();
+        if window == "week" {
+            let cutoff = now_secs().saturating_sub(7 * 24 * 60 * 60) as i64;
+            let mut stmt = conn
+                .prepare(
+                    "SELECT recipient_ua, SUM(amount_zat) AS total, COUNT(*) AS n
+                     FROM accruals
+                     WHERE created_at >= ?1
+                     GROUP BY recipient_ua
+                     ORDER BY total DESC
+                     LIMIT ?2",
+                )
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+            let r = stmt
+                .query_map(params![cutoff, limit], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)? as u64,
+                        row.get::<_, i64>(2)? as u64,
+                    ))
+                })
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+            r
+        } else {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT recipient_ua, lifetime_zat, rides_count
+                     FROM balances
+                     WHERE lifetime_zat > 0
+                     ORDER BY lifetime_zat DESC
+                     LIMIT ?1",
+                )
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+            let r = stmt
+                .query_map(params![limit], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)? as u64,
+                        row.get::<_, i64>(2)? as u64,
+                    ))
+                })
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+            r
+        }
+    };
+
+    // Resolve handles in a second pass (small N) to keep the queries simple.
+    let entries = {
+        let conn = state.db.lock().unwrap();
+        rows.into_iter()
+            .enumerate()
+            .map(|(i, (ua, zat, rides))| {
+                let handle: Option<String> = conn
+                    .query_row(
+                        "SELECT handle FROM handles WHERE recipient_ua = ?1",
+                        params![ua],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None);
+                LeaderboardEntry {
+                    rank: (i as u32) + 1,
+                    handle,
+                    short_ua: short_ua(&ua),
+                    zatoshi: zat,
+                    rides_count: rides,
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
+    Ok(Json(Leaderboard { window, entries }))
 }
 
 // ---------------------------------------------------------------------
@@ -1470,6 +1662,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/claim", post(post_claim))
         .route("/claims/:id", get(get_claim_handler))
         .route("/balance/:ua", get(balance_handler))
+        .route("/leaderboard", get(leaderboard_handler))
+        .route("/handle/:ua", post(set_handle_handler))
         .merge(admin)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

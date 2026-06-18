@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { HomeScreen } from '../screens/HomeScreen.tsx';
 import { RideTrackerScreen } from '../screens/RideTrackerScreen.tsx';
+import { LeaderboardScreen } from '../screens/LeaderboardScreen.tsx';
 import { PrivacyDashboardScreen } from '../screens/PrivacyDashboardScreen.tsx';
 import { theme } from './theme.ts';
 
@@ -30,6 +31,7 @@ export function Navigation() {
     >
       <Tabs.Screen name="Home" component={HomeScreen} />
       <Tabs.Screen name="Ride" component={RideTrackerScreen} />
+      <Tabs.Screen name="Leaders" component={LeaderboardScreen} />
       <Tabs.Screen name="Privacy" component={PrivacyDashboardScreen} />
     </Tabs.Navigator>
   );

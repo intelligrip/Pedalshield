@@ -26,11 +26,13 @@ import {
 } from '../ride/realSensorSource.ts';
 
 type SensorSource = { start: (s: RideSession) => void; stop: () => void };
+import { formatDurationMs } from '../lib/format.ts';
 import {
-  formatDurationMs,
-  formatKm,
-  formatKmh,
-} from '../lib/format.ts';
+  DISTANCE_UNIT,
+  SPEED_UNIT,
+  formatDistance,
+  formatSpeed,
+} from '../lib/units.ts';
 const ATT = {
   platform: 'android' as const,
   token: 'demo-attestation',
@@ -116,8 +118,8 @@ export function RideTrackerScreen() {
         <View style={styles.glassRow} pointerEvents="none">
           <GlassTile
             label="DISTANCE"
-            value={formatKm(snap.stats.liveKm)}
-            unit="km"
+            value={formatDistance(snap.stats.liveKm)}
+            unit={DISTANCE_UNIT}
           />
           <GlassTile
             label="TIME"
@@ -126,8 +128,8 @@ export function RideTrackerScreen() {
           />
           <GlassTile
             label="SPEED"
-            value={formatKmh(snap.stats.liveAvgKmh)}
-            unit="km/h"
+            value={formatSpeed(snap.stats.liveAvgKmh)}
+            unit={SPEED_UNIT}
           />
         </View>
       </View>
@@ -342,8 +344,8 @@ function PostRide({
         <View style={{ height: theme.space.md }} />
         <Stat
           label="Verified distance"
-          value={formatKm(result.verifiedKm)}
-          unit="km"
+          value={formatDistance(result.verifiedKm)}
+          unit={DISTANCE_UNIT}
           emphasised
         />
       </Card>

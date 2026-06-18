@@ -2,7 +2,13 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Card } from './Card.tsx';
 import { theme } from '../app/theme.ts';
-import { formatDurationMs, formatKm, formatKmh } from '../lib/format.ts';
+import { formatDurationMs } from '../lib/format.ts';
+import {
+  DISTANCE_UNIT,
+  SPEED_UNIT,
+  formatDistance,
+  formatSpeed,
+} from '../lib/units.ts';
 import type { RideStatsReport } from '../ride/rideStats.ts';
 
 /**
@@ -25,8 +31,8 @@ export function RideStatsCard({ report }: { report: RideStatsReport }) {
       <View style={styles.grid}>
         <Tile
           label="DISTANCE"
-          value={formatKm(report.distanceKm)}
-          unit="km"
+          value={formatDistance(report.distanceKm)}
+          unit={DISTANCE_UNIT}
           big
         />
         <Tile
@@ -37,14 +43,14 @@ export function RideStatsCard({ report }: { report: RideStatsReport }) {
         />
         <Tile
           label="AVG SPEED"
-          value={formatKmh(report.avgMovingKmh)}
-          unit="km/h"
+          value={formatSpeed(report.avgMovingKmh)}
+          unit={SPEED_UNIT}
           big
         />
       </View>
 
       <View style={[styles.grid, { marginTop: theme.space.md }]}>
-        <Tile label="MAX SPEED" value={formatKmh(report.maxKmh)} unit="km/h" />
+        <Tile label="MAX SPEED" value={formatSpeed(report.maxKmh)} unit={SPEED_UNIT} />
         <Tile
           label="ELEV GAIN"
           value={String(Math.round(report.elevationGainM))}
@@ -78,7 +84,7 @@ export function RideStatsCard({ report }: { report: RideStatsReport }) {
                   />
                 </View>
                 <Text style={[styles.splitSpeed, best && styles.splitBest]}>
-                  {formatKmh(s.avgKmh)}
+                  {formatSpeed(s.avgKmh)}
                   {best ? ' ★' : ''}
                 </Text>
               </View>

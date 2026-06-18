@@ -226,15 +226,28 @@ export function PayoutCard({
             accumulate off-chain (treasury fee ~0.5% at the 0.01 ZEC floor).
           </Text>
           {accruedBalance ? (
-            <View style={{ marginBottom: theme.space.md }}>
-              <Text style={styles.txidLabel}>Your accrued balance</Text>
-              <Text style={styles.txid} selectable>
-                {(accruedBalance.pending_zatoshi / 1e8).toFixed(8)} ZEC
-                {'  '}
-                <Text style={{ color: theme.color.textDim }}>
-                  (lifetime {(accruedBalance.lifetime_zatoshi / 1e8).toFixed(8)} ZEC · {accruedBalance.rides_count} rides)
+            <View style={styles.balanceBox}>
+              <View style={styles.balanceCol}>
+                <Text style={styles.balanceColLabel}>PENDING</Text>
+                <Text style={styles.balanceColValue} selectable>
+                  {(accruedBalance.pending_zatoshi / 1e8).toFixed(6)}
                 </Text>
-              </Text>
+                <Text style={styles.balanceColUnit}>ZEC to settle</Text>
+              </View>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceCol}>
+                <Text style={styles.balanceColLabel}>LIFETIME EARNED</Text>
+                <Text
+                  style={[styles.balanceColValue, { color: theme.color.success }]}
+                  selectable
+                >
+                  {(accruedBalance.lifetime_zatoshi / 1e8).toFixed(6)}
+                </Text>
+                <Text style={styles.balanceColUnit}>
+                  ZEC · {accruedBalance.rides_count}{' '}
+                  {accruedBalance.rides_count === 1 ? 'ride' : 'rides'}
+                </Text>
+              </View>
             </View>
           ) : null}
           <Text style={styles.help}>
@@ -345,6 +358,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  balanceBox: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: 'rgba(10,14,26,0.5)',
+    borderColor: theme.color.border,
+    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    padding: theme.space.md,
+    marginBottom: theme.space.md,
+  },
+  balanceCol: { flex: 1, gap: 2 },
+  balanceColLabel: {
+    color: theme.color.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  balanceColValue: {
+    color: theme.color.text,
+    fontSize: 20,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  balanceColUnit: { color: theme.color.textDim, fontSize: 11, fontWeight: '600' },
+  balanceDivider: {
+    width: 1,
+    backgroundColor: theme.color.border,
+    marginHorizontal: theme.space.md,
   },
   txid: {
     color: theme.color.text,

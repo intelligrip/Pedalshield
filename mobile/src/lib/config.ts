@@ -21,6 +21,14 @@ export const BACKEND_URL =
 export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/';
 
 /**
+ * Fallback reward rate in zatoshi per kilometre, used before the live
+ * value from GET /treasury/info arrives (or if the backend is offline).
+ * Mirrors the backend default (PEDALSHIELD_ZAT_PER_KM = 20_000 =
+ * 0.0002 ZEC/km ≈ 0.00032 ZEC/mile).
+ */
+export const DEFAULT_ZAT_PER_KM = 20_000;
+
+/**
  * Session-scoped recipient Unified Address. The rider pastes their Zashi
  * UA once; subsequent rides prefill it. Not persisted to disk (paste
  * again after an app restart) to keep the demo simple and key-free.
