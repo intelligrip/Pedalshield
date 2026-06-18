@@ -104,6 +104,26 @@ This is an early beta. Payouts are small and capped on purpose — privacy is th
 > **Health & Fitness** (it is, fundamentally, a cycling app) is both accurate
 > and the cleaner positioning.
 
+> ⚠️ **BLOCKER — these URLs must actually resolve before you submit.** As of
+> now they don't, and Apple rejects listings with a dead Privacy Policy URL:
+>
+> 1. **`https://pedalshield.app`** — was offline during the DNS propagation we
+>    just fixed. Confirm both the bare domain and `www` load before relying on it.
+> 2. **`https://pedalshield.app/privacy/`** — **not live yet.** The privacy
+>    page exists only on the `sdk-upgrade` branch; your live Netlify deploy is
+>    still the older version (last deployed Jun 13) and has no `/privacy/`
+>    page. You must **redeploy the site** with the current `landing/` folder
+>    for this URL to work.
+>
+> **To make `/privacy/` live**, do ONE of these:
+> - Merge `sdk-upgrade` → your Netlify production branch (likely `main`) and
+>   let Netlify auto-deploy — this also brings the new onboarding funnel live; or
+> - In Netlify → Deploys, drag-and-drop the `landing/` folder for a manual deploy; or
+> - Trigger a deploy of the `sdk-upgrade` branch from the Netlify dashboard.
+>
+> After deploying, open `https://pedalshield.app/privacy/` yourself and confirm
+> it loads. Only then paste it into App Store Connect.
+
 ---
 
 ## App Privacy questionnaire (the "nutrition label")
