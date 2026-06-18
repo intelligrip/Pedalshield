@@ -130,10 +130,11 @@
   <div class="wrap row">
     <div class="brand">Pedal<span>shield</span></div>
     <div class="links">
+      <a href="#get">Get started</a>
       <a href="#how">How it works</a>
       <a href="#proof">Proof</a>
       <a href="#limits">Honest limits</a>
-      <a href="#join" class="btn">Join the beta</a>
+      <a href="#join" class="btn js-install">Get the app</a>
     </div>
   </div>
 </nav>
@@ -144,12 +145,41 @@
     <h1>Ride private. <em>Earn shielded.</em></h1>
     <p class="lede">Pedalshield pays you ZEC for real bike rides — and your route <b>never leaves your phone</b>. Not encrypted-and-uploaded. Never uploaded.</p>
     <div class="cta-row">
-      <a href="#join" class="btn">Join the beta waitlist</a>
+      <a href="#join" class="btn js-install">Get the app</a>
       <a href="https://github.com/intelligrip/Pedalshield" class="btn ghost" target="_blank" rel="noopener">View the code</a>
     </div>
     <p class="micro">Open source · MIT licensed · ZecHub Hackathon 2026, Games track</p>
   </div>
 </header>
+
+<section class="band getstarted" id="get">
+  <div class="wrap">
+    <div class="kicker">Get started</div>
+    <h2 class="title">Onboarding in three taps.</h2>
+    <p class="sub">Non-custodial from the first second: you ride, you earn, and your ZEC lands in a wallet only you control.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <h3>Install Pedalshield</h3>
+        <p>Get the iOS app. <span class="js-install-note">Public beta is opening soon — join the list below and we’ll send your install link the moment it’s live.</span></p>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <h3>Connect your Zcash wallet</h3>
+        <p>Paste your wallet’s Unified Address — from Zashi, Zodl, or any Zcash wallet. We never hold your keys. No wallet yet? Grab the free Zashi app first.</p>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <h3>Ride &amp; earn</h3>
+        <p>Start a ride. Your route stays on your phone; verified miles pay real shielded ZEC straight to your address.</p>
+      </div>
+    </div>
+    <div class="cta-row" style="margin-top:32px">
+      <a href="#join" class="btn js-install">Get the app</a>
+      <a href="https://electriccoin.co/zashi/" class="btn ghost" target="_blank" rel="noopener">Get a free Zcash wallet</a>
+    </div>
+  </div>
+</section>
 
 <section class="band problem">
   <div class="wrap">
@@ -258,6 +288,36 @@
 </footer>
 
 <script>
+  // ---- Install link config ------------------------------------------------
+  // When the iOS build clears Beta App Review, paste the public TestFlight
+  // (or App Store) URL here and redeploy. That ONE change flips every
+  // "Get the app" button from waitlist-mode to one-tap install, updates the
+  // onboarding copy, and re-points the QR code at the install link.
+  var INSTALL_URL = ''; // e.g. 'https://testflight.apple.com/join/XXXXXXXX'
+
+  (function wireInstall () {
+    var live = !!INSTALL_URL && /^https?:\/\//.test(INSTALL_URL);
+    var btns = document.querySelectorAll('.js-install');
+    for (var i = 0; i < btns.length; i++) {
+      var el = btns[i];
+      if (live) {
+        el.setAttribute('href', INSTALL_URL);
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener');
+        el.textContent = 'Install on iPhone';
+      } else {
+        el.setAttribute('href', '#join'); // waitlist-mode fallback
+      }
+    }
+    if (live) {
+      var notes = document.querySelectorAll('.js-install-note');
+      for (var j = 0; j < notes.length; j++) {
+        notes[j].textContent = 'Tap “Install on iPhone” to get it through TestFlight.';
+      }
+      window.__PS_QR_TARGET = INSTALL_URL; // QR points at the install link
+    }
+  })();
+
   // Waitlist form → Formspree. Sends the email in the background and shows a
   // thank-you message without leaving the page.
   var form = document.getElementById('wl');
@@ -303,7 +363,7 @@
     var target = document.getElementById('qrcode');
     if (!target || typeof QRCode === 'undefined') return;
     var qr = new QRCode(target, {
-      text: 'https://pedalshield.app',
+      text: (window.__PS_QR_TARGET || 'https://pedalshield.app'),
       width: 256, height: 256,
       colorDark: '#12805C', colorLight: '#ffffff',
       correctLevel: QRCode.CorrectLevel.M
