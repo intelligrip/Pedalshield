@@ -14,10 +14,13 @@ import assert from 'node:assert/strict';
 
 import { toClaimPayload, verifyRide } from '../rideVerifier.ts';
 import {
+  buildBriskWalkNoPedometer,
   buildCarRide,
   buildGpsSpoof,
+  buildHillRide,
   buildLegitBikeRide,
   buildWalkingRide,
+  buildWalkingRideNoPedometer,
 } from './fixtures.ts';
 
 describe('verifyRide - legit bike ride', () => {
@@ -114,6 +117,75 @@ describe('verifyRide - walking (must not be a "ride")', () => {
     assert.ok(
       result.flags.some((f) => f.code === 'WALKING_DETECTED'),
       `flags: ${JSON.stringify(result.flags)}`,
+    );
+  });
+});
+
+describe('verifyRide - walking with NO pedometer data (the real-world cheat)', () => {
+  // Motion & Fitness off → no step data. The walk must STILL be rejected;
+  // the speed gate is pedometer-independent.
+  const result = verifyRide(buildWalkingRideNoPedometer());
+
+  it('rejects a walk even when step data is missing', () => {
+    assert.equal(
+      result.status,
+      'rejected',
+      `flags: ${JSON.stringify(result.flags)}, score: ${result.integrityScore}`,
+    );
+  });
+
+  it('pays zero verified distance for it', () => {
+    assert.equal(result.verifiedKm, 0);
+  });
+
+  it('hard-flags it as walking', () => {
+    assert.ok(
+      result.flags.some(
+        (f) => f.code === 'WALKING_DETECTED' && f.severity === 'hard',
+      ),
+      `flags: ${JSON.stringify(result.flags)}`,
+    );
+  });
+});
+
+describe('verifyRide - brisk walk with no pedometer', () => {
+  const result = verifyRide(buildBriskWalkNoPedometer());
+
+  it('does NOT verify a ~6.5 km/h brisk walk', () => {
+    assert.notEqual(
+      result.status,
+      'verified',
+      `flags: ${JSON.stringify(result.flags)}, score: ${result.integrityScore}`,
+    );
+  });
+});
+
+describe('verifyRide - hill ride with a slow climb (legit, must NOT be rejected)', () => {
+  // Fast start, a climb slower than walking pace in the middle, then a fast
+  // descent. The slow section must not trigger the walking gate, because the
+  // ride clearly reached cycling speed elsewhere.
+  const result = verifyRide(buildHillRide());
+
+  it('is not rejected', () => {
+    assert.notEqual(
+      result.status,
+      'rejected',
+      `flags: ${JSON.stringify(result.flags)}, score: ${result.integrityScore}`,
+    );
+  });
+
+  it('does not raise a walking flag', () => {
+    assert.equal(
+      result.flags.some((f) => f.code === 'WALKING_DETECTED'),
+      false,
+      `flags: ${JSON.stringify(result.flags)}`,
+    );
+  });
+
+  it('credits the full ride distance (slow climb still counts)', () => {
+    assert.ok(
+      result.verifiedKm > 3,
+      `verifiedKm=${result.verifiedKm}, status=${result.status}`,
     );
   });
 });

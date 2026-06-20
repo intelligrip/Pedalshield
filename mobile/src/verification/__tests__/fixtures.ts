@@ -42,6 +42,13 @@ function offsetMeters(
 interface BuildOpts {
   durationS: number;
   avgSpeedKmh: number;
+  /**
+   * Optional instantaneous-speed profile (km/h) as a function of ride
+   * fraction 0..1. Lets a fixture vary speed over time — e.g. a hill ride
+   * that starts fast, crawls up a climb, then descends. When omitted, speed
+   * is the constant avgSpeedKmh.
+   */
+  speedProfileKmh?: (frac: number) => number;
   sampleRateHz?: number;
   motionRateHz?: number;
   vibrationAmplitude?: number;
@@ -109,6 +116,78 @@ export function buildWalkingRide(): RawRide {
   });
 }
 
+/**
+ * A walk recorded with Motion & Fitness OFF — no pedometer data at all.
+ * This is the real-world cheat the speed gate must catch: with no step
+ * data, the old scorer gave full "not walking" credit and verified it.
+ */
+export function buildWalkingRideNoPedometer(): RawRide {
+  return buildRide({
+    durationS: 30 * 60,
+    avgSpeedKmh: 4.5, // walking pace
+    sampleRateHz: 1,
+    motionRateHz: 20,
+    vibrationAmplitude: 0.4, // footfalls still produce some vibration
+    cadenceHz: 0,
+    gpsAccuracy: 8,
+    withCurves: true,
+    withAttestation: true,
+    pedometerStepsPerMin: 0, // Motion & Fitness off → no steps reported
+    rideId: ULID('walknoped'),
+    seed: 7,
+  });
+}
+
+/**
+ * A brisk walk / power-walk (~6.5 km/h) with no step data. Still well under
+ * any cycling pace and must not verify.
+ */
+export function buildBriskWalkNoPedometer(): RawRide {
+  return buildRide({
+    durationS: 20 * 60,
+    avgSpeedKmh: 6.5,
+    sampleRateHz: 1,
+    motionRateHz: 20,
+    vibrationAmplitude: 0.4,
+    cadenceHz: 0,
+    gpsAccuracy: 8,
+    withCurves: true,
+    withAttestation: true,
+    pedometerStepsPerMin: 0,
+    rideId: ULID('briskwalk'),
+    seed: 8,
+  });
+}
+
+/**
+ * A real bike ride with a hard climb: starts at a brisk flat pace, crawls
+ * up a steep hill in the middle (down to ~6 km/h — slower than walking), then
+ * descends fast. The slow climb must NOT get the whole ride rejected, because
+ * the ride clearly broke cycling speed elsewhere. This is the legit
+ * counterpart to the walking fixtures.
+ */
+export function buildHillRide(): RawRide {
+  return buildRide({
+    durationS: 24 * 60,
+    avgSpeedKmh: 16, // nominal; overridden by the profile below
+    speedProfileKmh: (f) => {
+      if (f < 0.33) return 22; // warm-up / flat approach
+      if (f < 0.66) return 6; // grinding up the climb, below walking pace
+      return 34; // descent
+    },
+    sampleRateHz: 1,
+    motionRateHz: 20,
+    vibrationAmplitude: 0.6,
+    cadenceHz: 1.3, // still pedaling, even on the climb
+    gpsAccuracy: 8,
+    withCurves: true,
+    withAttestation: true,
+    pedometerStepsPerMin: 2, // cycling, not walking
+    rideId: ULID('hill'),
+    seed: 9,
+  });
+}
+
 export function buildGpsSpoof(): RawRide {
   const start = START;
   const end = offsetMeters(start, 10_000, 0); // 10 km east instantly
@@ -166,7 +245,10 @@ function buildRide(opts: BuildOpts): RawRide {
     if (opts.withCurves && i > 0 && i % 30 === 0) {
       heading += (rng() - 0.5) * 0.8;
     }
-    const dxy = speedMs * dt;
+    const instSpeedMs = opts.speedProfileKmh
+      ? (opts.speedProfileKmh(numGeo > 0 ? i / numGeo : 0) * 1000) / 3600
+      : speedMs;
+    const dxy = instSpeedMs * dt;
     if (i > 0) {
       acc = offsetMeters(
         acc,
@@ -179,7 +261,7 @@ function buildRide(opts: BuildOpts): RawRide {
       lon: acc.lon,
       altitude: 10 + Math.sin(t / 60) * 3,
       accuracy: opts.gpsAccuracy ?? 8,
-      speed: speedMs,
+      speed: instSpeedMs,
       timestamp: startedAt + Math.floor(t * 1000),
     });
   }

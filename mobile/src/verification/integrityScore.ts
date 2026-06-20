@@ -8,12 +8,15 @@
 
 import type { RawRide, RideFeatures, VerificationFlag } from './types.ts';
 import {
+  CYCLING_BURST_MIN_KMH,
   HARD_FAIL_AVG_SPEED_KMH,
   HARD_FAIL_MAX_SPEED_KMH,
   MAX_GPS_ACCURACY_METERS,
   MIN_CADENCE_CONFIDENCE,
+  MIN_CYCLING_AVG_SPEED_KMH,
   MIN_SAMPLE_DENSITY_HZ,
   MIN_VIBRATION_ENERGY,
+  WALKING_GATE_MIN_DISTANCE_KM,
 } from './constants.ts';
 
 export interface ScoringResult {
@@ -50,6 +53,23 @@ export function scoreRide(
       code: 'SPEED_OUT_OF_BAND',
       severity: 'hard',
       detail: `avg ${features.avgSpeedKmh.toFixed(1)} km/h exceeds cycling envelope`,
+    });
+  }
+  // Walking-pace hard fail — pedometer-INDEPENDENT, so it still catches a
+  // walk when Motion & Fitness (step) data is missing. Moving average below
+  // the cycling floor AND a peak segment that never reaches a cycling burst
+  // = walking, not riding. The distance floor keeps GPS jitter on a parked
+  // phone from tripping it.
+  if (
+    features.movingDistanceKm >= WALKING_GATE_MIN_DISTANCE_KM &&
+    features.avgSpeedKmh > 0 &&
+    features.avgSpeedKmh < MIN_CYCLING_AVG_SPEED_KMH &&
+    features.maxSpeedKmh < CYCLING_BURST_MIN_KMH
+  ) {
+    flags.push({
+      code: 'WALKING_DETECTED',
+      severity: 'hard',
+      detail: `avg ${features.avgSpeedKmh.toFixed(1)} km/h, peak ${features.maxSpeedKmh.toFixed(1)} km/h — walking pace, never reached cycling speed`,
     });
   }
   if (ride.motion.length === 0) {
@@ -97,10 +117,15 @@ export function scoreRide(
     flags.push({ code: 'NO_CADENCE', severity: 'soft' });
   }
 
-  // Inverse of walking interference
-  const noWalk = 1 - features.walkingInterference;
+  // Inverse of walking interference. When step (pedometer) data is missing
+  // we must NOT grant full "not walking" credit — absence of evidence isn't
+  // evidence of cycling. Fall back to a neutral 0.5 so a walk with Motion &
+  // Fitness off can't ride a free 1.0 here (the speed hard fail above is the
+  // primary guard; this is defense-in-depth).
+  const hasPedometer = ride.pedometer.length > 0;
+  const noWalk = hasPedometer ? 1 - features.walkingInterference : 0.5;
   subs.push({ weight: 0.15, value: noWalk });
-  if (features.walkingInterference > 0.5) {
+  if (hasPedometer && features.walkingInterference > 0.5) {
     flags.push({ code: 'WALKING_DETECTED', severity: 'soft' });
   }
 
