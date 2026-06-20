@@ -33,7 +33,16 @@ import {
   SPEED_UNIT,
   formatDistance,
   formatSpeed,
+  kmToDisplay,
 } from '../lib/units.ts';
+import { SplitTracker } from '../ride/splitTracker.ts';
+import {
+  cueStart,
+  cueFinish,
+  cuePause,
+  cueResume,
+  cueSplit,
+} from '../ride/cues.ts';
 const ATT = {
   platform: 'android' as const,
   token: 'demo-attestation',
@@ -46,6 +55,7 @@ const MAP_HEIGHT = 360;
 export function RideTrackerScreen() {
   const sessionRef = useRef<RideSession>(new RideSession(ATT));
   const sourceRef = useRef<SensorSource | null>(null);
+  const splitRef = useRef<SplitTracker>(new SplitTracker());
   const [snap, setSnap] = useState<RideSessionSnapshot>(
     sessionRef.current.snapshot(),
   );
@@ -57,6 +67,40 @@ export function RideTrackerScreen() {
     return off;
   }, []);
 
+  const paused = snap.state === 'paused';
+  const riding = snap.state === 'active' || paused;
+
+  function startRide() {
+    splitRef.current.reset();
+    sourceRef.current = new RealSensorSource();
+    sessionRef.current.start();
+    sourceRef.current.start(sessionRef.current);
+    cueStart();
+  }
+
+  function finishRide() {
+    sourceRef.current?.stop();
+    sessionRef.current.stop();
+    cueFinish();
+  }
+
+  function togglePause() {
+    if (snap.state === 'active') {
+      sessionRef.current.pause();
+      cuePause();
+    } else if (snap.state === 'paused') {
+      sessionRef.current.resume();
+      cueResume();
+    }
+  }
+
+  // Eyes-free distance milestone cues (every whole mile / km).
+  useEffect(() => {
+    if (!riding) return;
+    const reached = splitRef.current.update(kmToDisplay(snap.stats.liveKm));
+    for (const n of reached) cueSplit(n, DISTANCE_UNIT);
+  }, [snap.stats.liveKm, riding]);
+
   // Repaint live stats (elapsed clock) once per second while active.
   useEffect(() => {
     if (snap.state !== 'active') return;
@@ -67,10 +111,6 @@ export function RideTrackerScreen() {
   useEffect(() => {
     if (snap.state === 'active') setSnap(sessionRef.current.snapshot());
   }, [tick]);
-
-  const elapsedMs = snap.startedAt
-    ? (snap.endedAt ?? Date.now()) - snap.startedAt
-    : 0;
 
   const mapWidth = useMemo(
     () => Math.max(280, Dimensions.get('window').width - HORIZ_PADDING),
@@ -95,10 +135,10 @@ export function RideTrackerScreen() {
     <ScreenContainer scroll={false}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>
-          {snap.state === 'active' ? 'Riding' : 'Ride'}
+          {paused ? 'Paused' : snap.state === 'active' ? 'Riding' : 'Ride'}
         </Text>
         <View style={styles.chipRow}>
-          {snap.state === 'active' && <GpsChip />}
+          {riding && <GpsChip />}
           <Pressable
             style={styles.padlockChip}
             onPress={() => setRevealOpen(true)}
@@ -124,7 +164,7 @@ export function RideTrackerScreen() {
           />
           <GlassTile
             label="TIME"
-            value={formatDurationMs(elapsedMs)}
+            value={formatDurationMs(snap.stats.elapsedS * 1000)}
             unit=""
           />
           <GlassTile
@@ -136,29 +176,35 @@ export function RideTrackerScreen() {
       </View>
 
       {snap.state === 'active' && <GpsBanner />}
+      {paused && (
+        <View style={[styles.gpsBanner, { borderLeftColor: theme.color.warning }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.gpsBannerTitle, { color: theme.color.warning }]}>
+              Ride paused
+            </Text>
+            <Text style={styles.gpsBannerBody}>
+              Distance and time are frozen. Tap Resume to keep riding.
+            </Text>
+          </View>
+        </View>
+      )}
 
       <View style={styles.actions}>
         {snap.state === 'idle' && (
-          <Button
-            label="Start ride"
-            size="lg"
-            onPress={() => {
-              sourceRef.current = new RealSensorSource();
-              sessionRef.current.start();
-              sourceRef.current.start(sessionRef.current);
-            }}
-          />
+          <Button label="Start ride" size="lg" onPress={startRide} />
         )}
-        {snap.state === 'active' && (
-          <Button
-            label="Stop ride"
-            size="lg"
-            variant="danger"
-            onPress={() => {
-              sourceRef.current?.stop();
-              sessionRef.current.stop();
-            }}
-          />
+        {riding && (
+          <View style={styles.ridingActions}>
+            <View style={styles.pauseBtnWrap}>
+              <Button
+                label={paused ? 'Resume' : 'Pause'}
+                size="lg"
+                variant="secondary"
+                onPress={togglePause}
+              />
+            </View>
+            <HoldToFinish onFinish={finishRide} />
+          </View>
         )}
         {snap.state === 'error' && (
           <Button
@@ -177,6 +223,63 @@ export function RideTrackerScreen() {
         distanceM={snap.stats.liveKm * 1000}
       />
     </ScreenContainer>
+  );
+}
+
+/**
+ * Hold-to-finish button. Stopping a ride triggers verification + submission,
+ * so a single accidental tap shouldn't end it. The rider holds for ~1.2s; a
+ * fill animates across, then the ride finishes. Releasing early cancels.
+ */
+function HoldToFinish({ onFinish }: { onFinish: () => void }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const anim = useRef<Animated.CompositeAnimation | null>(null);
+
+  function start() {
+    anim.current = Animated.timing(progress, {
+      toValue: 1,
+      duration: 1200,
+      useNativeDriver: false,
+    });
+    anim.current.start();
+    timer.current = setTimeout(() => {
+      cancel();
+      onFinish();
+    }, 1200);
+  }
+
+  function cancel() {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    anim.current?.stop();
+    Animated.timing(progress, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: false,
+    }).start();
+  }
+
+  // interpolate() exists at runtime; the sandbox RN type stub omits it.
+  const width = (
+    progress as unknown as {
+      interpolate: (c: {
+        inputRange: number[];
+        outputRange: string[];
+      }) => unknown;
+    }
+  ).interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
+  return (
+    <Pressable onPressIn={start} onPressOut={cancel} style={styles.holdBtn}>
+      <Animated.View style={[styles.holdFill, { width }]} />
+      <Text style={styles.holdText}>Hold to finish</Text>
+    </Pressable>
   );
 }
 
@@ -618,6 +721,34 @@ const styles = StyleSheet.create({
   },
   glassUnit: { color: theme.color.textDim, fontSize: 11, fontWeight: '700' },
   actions: { marginTop: 'auto' },
+  ridingActions: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: theme.space.md,
+  },
+  pauseBtnWrap: { flex: 1 },
+  holdBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1.5,
+    borderColor: theme.color.danger,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  holdFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(248, 113, 113, 0.30)',
+  },
+  holdText: {
+    color: theme.color.danger,
+    fontSize: 16,
+    fontWeight: '800',
+  },
   sourceToggle: {
     alignSelf: 'center',
     marginBottom: theme.space.md,

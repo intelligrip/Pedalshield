@@ -24,6 +24,7 @@ import { haversineKm } from '../verification/sensorFusion.ts';
 export type RideSessionState =
   | 'idle'
   | 'active'
+  | 'paused'
   | 'stopping'
   | 'complete'
   | 'error';
@@ -81,6 +82,8 @@ export class RideSession {
   private pedometer: PedometerWindow[] = [];
   private attestation: AttestationToken | undefined;
   private liveMaxKmh = 0;
+  private pausedAccumMs = 0;
+  private pausedAt: number | null = null;
   private result: RideVerificationResult | null = null;
   private errorMessage: string | null = null;
   private listeners = new Set<SessionListener>();
@@ -105,13 +108,37 @@ export class RideSession {
     this.barometer = [];
     this.pedometer = [];
     this.liveMaxKmh = 0;
+    this.pausedAccumMs = 0;
+    this.pausedAt = null;
     this.result = null;
     this.errorMessage = null;
     this.state = 'active';
     return this.notify();
   }
 
+  /** Pause the ride: freezes the clock and ignores incoming samples. */
+  pause(): RideSessionSnapshot {
+    this.requireState('active', 'pause');
+    this.pausedAt = Date.now();
+    this.state = 'paused';
+    return this.notify();
+  }
+
+  /** Resume a paused ride: clock and sampling continue. */
+  resume(): RideSessionSnapshot {
+    this.requireState('paused', 'resume');
+    if (this.pausedAt !== null) {
+      this.pausedAccumMs += Date.now() - this.pausedAt;
+      this.pausedAt = null;
+    }
+    this.state = 'active';
+    return this.notify();
+  }
+
   addGeoSample(point: GeoPoint): RideSessionSnapshot {
+    // Samples that arrive while paused are dropped, not errors — a paused
+    // rider standing at a light shouldn't accumulate distance or throw.
+    if (this.state === 'paused') return this.snapshot();
     this.requireState('active', 'addGeoSample');
     if (this.geo.length > 0) {
       const prev = this.geo[this.geo.length - 1];
@@ -125,25 +152,35 @@ export class RideSession {
   }
 
   addMotionSample(sample: MotionSample): RideSessionSnapshot {
+    if (this.state === 'paused') return this.snapshot();
     this.requireState('active', 'addMotionSample');
     this.motion.push(sample);
     return this.notify();
   }
 
   addBarometerSample(sample: BarometerSample): RideSessionSnapshot {
+    if (this.state === 'paused') return this.snapshot();
     this.requireState('active', 'addBarometerSample');
     this.barometer.push(sample);
     return this.notify();
   }
 
   addPedometerWindow(window: PedometerWindow): RideSessionSnapshot {
+    if (this.state === 'paused') return this.snapshot();
     this.requireState('active', 'addPedometerWindow');
     this.pedometer.push(window);
     return this.notify();
   }
 
   stop(): RideSessionSnapshot {
-    this.requireState('active', 'stop');
+    if (this.state !== 'active' && this.state !== 'paused') {
+      throw new Error(`stop requires state active or paused, currently ${this.state}`);
+    }
+    // Finalise any open pause interval so paused time is excluded cleanly.
+    if (this.state === 'paused' && this.pausedAt !== null) {
+      this.pausedAccumMs += Date.now() - this.pausedAt;
+      this.pausedAt = null;
+    }
     this.state = 'stopping';
     this.endedAt = Date.now();
     try {
@@ -176,6 +213,8 @@ export class RideSession {
     this.barometer = [];
     this.pedometer = [];
     this.liveMaxKmh = 0;
+    this.pausedAccumMs = 0;
+    this.pausedAt = null;
     this.result = null;
     this.errorMessage = null;
     return this.notify();
@@ -208,6 +247,11 @@ export class RideSession {
     };
   }
 
+  /** Lightweight current-state read (no snapshot allocation). */
+  getState(): RideSessionState {
+    return this.state;
+  }
+
   subscribe(listener: SessionListener): () => void {
     this.listeners.add(listener);
     listener(this.snapshot());
@@ -221,7 +265,14 @@ export class RideSession {
       return EMPTY_STATS;
     }
     const now = this.endedAt ?? Date.now();
-    const elapsedS = Math.max(0, (now - this.startedAt) / 1000);
+    // Exclude paused time so the live clock and average speed reflect actual
+    // riding. While currently paused, also subtract the open pause interval.
+    const openPauseMs =
+      this.state === 'paused' && this.pausedAt !== null
+        ? now - this.pausedAt
+        : 0;
+    const activeMs = now - this.startedAt - this.pausedAccumMs - openPauseMs;
+    const elapsedS = Math.max(0, activeMs / 1000);
     let liveKm = 0;
     for (let i = 1; i < this.geo.length; i++) {
       liveKm += haversineKm(this.geo[i - 1], this.geo[i]);

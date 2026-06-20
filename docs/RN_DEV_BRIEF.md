@@ -24,6 +24,11 @@ A native in-app wallet (`mobile/src/wallet/nativeWallet.ts`, RN bridge to `Zcash
 2. **Ride not always saving / submitting.** Some finished rides never reach the backend (no `POST /claim` logged) and aren't saved locally. Trace ride-finish → `ClaimPayload` → `POST /claim` (`mobile/src/lib/api.ts`, `PayoutCard.tsx`); fix the break so every completed ride is persisted and submitted.
 3. **Privacy screen won't scroll.** ScrollView/layout regression under RN 0.85. Fix the scroll container.
 
+### Tracking-experience upgrades shipped (verify on device)
+- **Pause / resume + auto-pause.** `RideSession` has `pause()`/`resume()` (paused time excluded from the clock + avg speed; samples dropped while paused). Auto-pause/resume runs from instantaneous GPS speed in `realSensorSource` via the tested `autoPause.ts` detector (manual pause always wins). UI has a Pause/Resume button + a "Ride paused" banner.
+- **Hold-to-finish.** Stopping (which triggers verification + submission) now requires a ~1.2s hold, so an accidental tap can't end a ride.
+- **Eyes-free cues.** `cues.ts` fires haptics on start / pause / resume / finish and on every whole mile/km split (`splitTracker.ts`, tested), with optional spoken splits (`setVoiceCues(true)`). New deps: `expo-haptics`, `expo-speech` (install in the rebuild step).
+
 ## P2 — the ride-report + history feature (founder-requested)
 - **Bank every ride locally on the device** (privacy-preserving persistence — `expo-sqlite` or `@react-native-async-storage/async-storage`). Store: date, distance, moving time, avg/max speed, elevation, integrity score, ZEC earned, payout txid.
 - **Last-ride report** screen (design already mocked: dark card, stats grid, ZEC earned + txid link, "route stayed on your phone").

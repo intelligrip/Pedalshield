@@ -77,6 +77,55 @@ describe('RideSession lifecycle', () => {
       `liveKm should be ~0.1 km, got ${snap.stats.liveKm}`);
   });
 
+  it('pause() / resume() transitions and drops samples while paused', () => {
+    const s = new RideSession(ATT);
+    s.start();
+    const now = Date.now();
+    s.addGeoSample({
+      lat: 37.7749, lon: -122.4194, altitude: 10, accuracy: 5,
+      speed: 5, timestamp: now,
+    });
+
+    const paused = s.pause();
+    assert.equal(paused.state, 'paused');
+
+    // A sample arriving while paused is ignored, not an error, and does not
+    // accumulate distance.
+    const beforeCount = s.snapshot().stats.geoSampleCount;
+    s.addGeoSample({
+      lat: 37.7999, lon: -122.4194, altitude: 10, accuracy: 5,
+      speed: 5, timestamp: now + 1000,
+    });
+    assert.equal(s.snapshot().stats.geoSampleCount, beforeCount);
+
+    const resumed = s.resume();
+    assert.equal(resumed.state, 'active');
+
+    // After resume, samples accumulate again.
+    s.addGeoSample({
+      lat: 37.7758, lon: -122.4194, altitude: 10, accuracy: 5,
+      speed: 5, timestamp: now + 2000,
+    });
+    assert.equal(s.snapshot().stats.geoSampleCount, beforeCount + 1);
+  });
+
+  it('rejects resume() when not paused, and pause() when not active', () => {
+    const s = new RideSession(ATT);
+    assert.throws(() => s.resume(), /requires state paused/);
+    s.start();
+    assert.throws(() => s.resume(), /requires state paused/);
+    s.pause();
+    assert.throws(() => s.pause(), /requires state active/);
+  });
+
+  it('stop() works from a paused state', () => {
+    const s = new RideSession(ATT);
+    s.start();
+    s.pause();
+    const snap = s.stop();
+    assert.equal(snap.state, 'complete');
+  });
+
   it('stop() runs verification and moves to complete', () => {
     const s = new RideSession(ATT);
     s.start();
