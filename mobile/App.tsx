@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { Navigation } from './src/app/Navigation.tsx';
 import { theme } from './src/app/theme.ts';
 import { loadConnectedWallet } from './src/wallet/connectedWallet.ts';
+import { loadUnitPreference } from './src/lib/units.ts';
 
 const navTheme = {
   dark: true,
@@ -27,6 +28,7 @@ export default function App() {
     // only restore the rider's connected (bring-your-own) Zcash address from
     // disk so the Home/Ride/Privacy screens know where payouts go before
     // anything renders. Best-effort: failure just means "not connected yet".
+    void loadUnitPreference(); // restore mi/km choice before screens render
     loadConnectedWallet()
       .catch((err) => {
         console.error('[boot] connected-wallet restore failed:', err);

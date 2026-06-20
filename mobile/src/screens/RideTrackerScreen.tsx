@@ -29,11 +29,13 @@ import {
 type SensorSource = { start: (s: RideSession) => void; stop: () => void };
 import { formatDurationMs } from '../lib/format.ts';
 import {
-  DISTANCE_UNIT,
-  SPEED_UNIT,
+  distanceUnit,
+  speedUnit,
   formatDistance,
   formatSpeed,
   kmToDisplay,
+  displayUnitInKm,
+  useUnits,
 } from '../lib/units.ts';
 import { SplitTracker } from '../ride/splitTracker.ts';
 import {
@@ -67,6 +69,7 @@ export function RideTrackerScreen() {
     return off;
   }, []);
 
+  useUnits(); // re-render when the rider toggles mi/km
   const paused = snap.state === 'paused';
   const riding = snap.state === 'active' || paused;
 
@@ -98,7 +101,7 @@ export function RideTrackerScreen() {
   useEffect(() => {
     if (!riding) return;
     const reached = splitRef.current.update(kmToDisplay(snap.stats.liveKm));
-    for (const n of reached) cueSplit(n, DISTANCE_UNIT);
+    for (const n of reached) cueSplit(n, distanceUnit());
   }, [snap.stats.liveKm, riding]);
 
   // Repaint live stats (elapsed clock) once per second while active.
@@ -160,7 +163,7 @@ export function RideTrackerScreen() {
           <GlassTile
             label="DISTANCE"
             value={formatDistance(snap.stats.liveKm)}
-            unit={DISTANCE_UNIT}
+            unit={distanceUnit()}
           />
           <GlassTile
             label="TIME"
@@ -170,7 +173,7 @@ export function RideTrackerScreen() {
           <GlassTile
             label="SPEED"
             value={formatSpeed(snap.stats.liveAvgKmh)}
-            unit={SPEED_UNIT}
+            unit={speedUnit()}
           />
         </View>
       </View>
@@ -494,8 +497,9 @@ function PostRide({
   mapWidth: number;
   onDone: () => void;
 }) {
+  useUnits(); // re-render when the rider toggles mi/km
   const report = useMemo(
-    () => (rawRide ? computeRideStats(rawRide) : null),
+    () => (rawRide ? computeRideStats(rawRide, displayUnitInKm()) : null),
     [rawRide],
   );
   const result = snap.result!;
@@ -536,7 +540,7 @@ function PostRide({
         <Stat
           label="Verified distance"
           value={formatDistance(result.verifiedKm)}
-          unit={DISTANCE_UNIT}
+          unit={distanceUnit()}
           emphasised
         />
       </Card>

@@ -8,10 +8,12 @@ import type { RawRide } from '../verification/types.ts';
 import { haversineKm } from '../verification/sensorFusion.ts';
 
 export interface KmSplit {
-  /** Split length in km (1 for full splits; <1 for the final partial). */
+  /** Split length in km (the unit length for full splits; <it for the final partial). */
   km: number;
   seconds: number;
   avgKmh: number;
+  /** True for a complete split, false for the trailing partial. */
+  full: boolean;
 }
 
 export interface RideStatsReport {
@@ -36,8 +38,13 @@ const ELEV_NOISE_M = 1.5;
 /** Ignore implausible max-speed spikes from sub-second GPS pairs. */
 const MIN_SEGMENT_S = 1;
 
-export function computeRideStats(raw: RawRide): RideStatsReport {
+export function computeRideStats(
+  raw: RawRide,
+  /** Split length in km — pass 1.609344 for mile splits, 1 for km (default). */
+  splitLenKm = 1,
+): RideStatsReport {
   const geo = raw.geo;
+  const unit = splitLenKm > 0 ? splitLenKm : 1;
   const elapsedS = Math.max(0, (raw.endedAt - raw.startedAt) / 1000);
 
   let distanceKm = 0;
@@ -81,19 +88,24 @@ export function computeRideStats(raw: RawRide): RideStatsReport {
     // inside this segment so split boundaries land on the km, not on
     // whatever GPS fix happened to arrive next.
     splitKm += dKm;
-    while (splitKm >= 1) {
-      const overshootKm = splitKm - 1;
+    while (splitKm >= unit) {
+      const overshootKm = splitKm - unit;
       const fraction = dKm > 0 ? 1 - overshootKm / dKm : 1;
       const crossT = a.timestamp + (b.timestamp - a.timestamp) * fraction;
       const seconds = Math.max(0.001, (crossT - splitStartT) / 1000);
-      splits.push({ km: 1, seconds, avgKmh: 3600 / seconds });
+      splits.push({
+        km: unit,
+        seconds,
+        avgKmh: (unit * 3600) / seconds,
+        full: true,
+      });
       splitStartT = crossT;
-      splitKm -= 1;
+      splitKm -= unit;
     }
   }
 
-  // Final partial split (only if it's a meaningful fraction).
-  if (splitKm >= 0.05 && geo.length > 1) {
+  // Final partial split (only if it's a meaningful fraction of the unit).
+  if (splitKm >= unit * 0.05 && geo.length > 1) {
     const seconds = Math.max(
       0.001,
       (geo[geo.length - 1].timestamp - splitStartT) / 1000,
@@ -102,13 +114,14 @@ export function computeRideStats(raw: RawRide): RideStatsReport {
       km: splitKm,
       seconds,
       avgKmh: (splitKm * 3600) / seconds,
+      full: false,
     });
   }
 
   let bestSplitIndex = -1;
   let bestSeconds = Infinity;
   for (let i = 0; i < splits.length; i++) {
-    if (splits[i].km === 1 && splits[i].seconds < bestSeconds) {
+    if (splits[i].full && splits[i].seconds < bestSeconds) {
       bestSeconds = splits[i].seconds;
       bestSplitIndex = i;
     }

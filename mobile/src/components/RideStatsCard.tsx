@@ -4,10 +4,12 @@ import { Card } from './Card.tsx';
 import { theme } from '../app/theme.ts';
 import { formatDurationMs } from '../lib/format.ts';
 import {
-  DISTANCE_UNIT,
-  SPEED_UNIT,
+  distanceUnit,
+  speedUnit,
   formatDistance,
   formatSpeed,
+  kmToDisplay,
+  useUnits,
 } from '../lib/units.ts';
 import type { RideStatsReport } from '../ride/rideStats.ts';
 
@@ -16,6 +18,7 @@ import type { RideStatsReport } from '../ride/rideStats.ts';
  * on-device. None of this leaves the phone.
  */
 export function RideStatsCard({ report }: { report: RideStatsReport }) {
+  useUnits(); // re-render when the rider toggles mi/km
   const maxSplitKmh = Math.max(
     1,
     ...report.splits.map((s) => s.avgKmh),
@@ -32,7 +35,7 @@ export function RideStatsCard({ report }: { report: RideStatsReport }) {
         <Tile
           label="DISTANCE"
           value={formatDistance(report.distanceKm)}
-          unit={DISTANCE_UNIT}
+          unit={distanceUnit()}
           big
         />
         <Tile
@@ -44,13 +47,13 @@ export function RideStatsCard({ report }: { report: RideStatsReport }) {
         <Tile
           label="AVG SPEED"
           value={formatSpeed(report.avgMovingKmh)}
-          unit={SPEED_UNIT}
+          unit={speedUnit()}
           big
         />
       </View>
 
       <View style={[styles.grid, { marginTop: theme.space.md }]}>
-        <Tile label="MAX SPEED" value={formatSpeed(report.maxKmh)} unit={SPEED_UNIT} />
+        <Tile label="MAX SPEED" value={formatSpeed(report.maxKmh)} unit={speedUnit()} />
         <Tile
           label="ELEV GAIN"
           value={String(Math.round(report.elevationGainM))}
@@ -65,14 +68,16 @@ export function RideStatsCard({ report }: { report: RideStatsReport }) {
 
       {report.splits.length > 0 ? (
         <View style={styles.splits}>
-          <Text style={styles.splitsHeader}>SPLITS</Text>
+          <Text style={styles.splitsHeader}>
+            SPLITS · per {distanceUnit()}
+          </Text>
           {report.splits.map((s, i) => {
             const best = i === report.bestSplitIndex;
             const barPct = Math.max(8, (s.avgKmh / maxSplitKmh) * 100);
             return (
               <View key={i} style={styles.splitRow}>
                 <Text style={styles.splitKm}>
-                  {s.km === 1 ? String(i + 1) : s.km.toFixed(1)}
+                  {s.full ? String(i + 1) : kmToDisplay(s.km).toFixed(1)}
                 </Text>
                 <View style={styles.splitBarTrack}>
                   <View

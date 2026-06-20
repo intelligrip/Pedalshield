@@ -30,11 +30,10 @@ A native in-app wallet (`mobile/src/wallet/nativeWallet.ts`, RN bridge to `Zcash
 - **Eyes-free cues.** `cues.ts` fires haptics on start / pause / resume / finish and on every whole mile/km split (`splitTracker.ts`, tested), with optional spoken splits (`setVoiceCues(true)`). New deps: `expo-haptics`, `expo-speech` (install in the rebuild step).
 
 ## P2 — the ride-report + history feature (founder-requested)
-- **Bank every ride locally on the device** (privacy-preserving persistence — `expo-sqlite` or `@react-native-async-storage/async-storage`). Store: date, distance, moving time, avg/max speed, elevation, integrity score, ZEC earned, payout txid.
-- **Last-ride report** screen (design already mocked: dark card, stats grid, ZEC earned + txid link, "route stayed on your phone").
-- **Year-to-date cumulative miles** on the home screen.
-- **mph / km toggle** (internal is km; add a unit setting, default mph for US).
-- Acceptance: rides persist across restarts; last ride + YTD visible; unit toggle works.
+- ✅ **mph / km toggle — DONE.** User-overridable unit preference (`src/lib/units.ts`: `setUnitPreference`/`useUnits`, persisted via AsyncStorage, defaults to locale). A segmented mi/km/Auto control on the Home screen updates the whole app live; splits compute per-mile for US riders (`computeRideStats(raw, splitLenKm)`, tested).
+- ✅ **Last-ride report — DONE (display).** `RideStatsCard` shows distance, moving/stopped time, avg/max speed, elevation gain, and per-unit split bars with the fastest split starred — all computed on-device.
+- **Still open — persistence.** Rides are in-memory only (the "no memory of ride" gap): bank every finished ride to disk (`expo-sqlite` or AsyncStorage) — date, distance, time, speeds, elevation, integrity, ZEC earned, txid — so history survives restarts.
+- **Still open — Year-to-date cumulative miles** on the home screen (needs the persistence above).
 
 ## P3 — polish for launch
 - Onboarding / first-run explainer (privacy framing: "your route never leaves your phone").

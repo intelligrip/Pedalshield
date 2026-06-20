@@ -3,7 +3,7 @@ import { Share, StyleSheet, Text, View } from 'react-native';
 import { Button } from './Button.tsx';
 import { theme } from '../app/theme.ts';
 import { EXPLORER_TX_BASE } from '../lib/config.ts';
-import { DISTANCE_UNIT, formatDistance } from '../lib/units.ts';
+import { distanceUnit, formatDistance, useUnits } from '../lib/units.ts';
 
 /**
  * Proof-without-exposure share card.
@@ -24,11 +24,12 @@ export function ShareCard({
   integrityScore: number;
   txid: string;
 }) {
+  useUnits(); // re-render when the rider toggles mi/km
   const km = distanceM / 1000;
 
   async function onShare() {
     const msg =
-      `Rode ${formatDistance(km)} ${DISTANCE_UNIT}. My phone verified it — the route never ` +
+      `Rode ${formatDistance(km)} ${distanceUnit()}. My phone verified it — the route never ` +
       `left the device. An autonomous treasury paid me shielded ZEC on ` +
       `Zcash mainnet. Proof: ${EXPLORER_TX_BASE}${txid}` +
       `\n\nRide private. Earn shielded. #Pedalshield`;
@@ -49,7 +50,7 @@ export function ShareCard({
 
         <View style={styles.kmRow}>
           <Text style={styles.km}>{formatDistance(km)}</Text>
-          <Text style={styles.kmUnit}>{DISTANCE_UNIT} verified</Text>
+          <Text style={styles.kmUnit}>{distanceUnit()} verified</Text>
         </View>
 
         <View style={styles.metaRow}>

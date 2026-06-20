@@ -75,6 +75,22 @@ describe('computeRideStats', () => {
     assert.ok(r.bestSplitIndex >= 0);
   });
 
+  it('splits by the unit length when given (mile splits)', () => {
+    const MILE_KM = 1.609344;
+    const r = computeRideStats(buildRide({ kmh: 24, km: 5 }), MILE_KM);
+    const full = r.splits.filter((s) => s.full);
+    // 5 km ≈ 3.1 miles → 3 full mile-splits + a trailing partial.
+    assert.equal(full.length, 3, `full splits: ${full.length}`);
+    for (const s of full) {
+      assert.ok(
+        Math.abs(s.km - MILE_KM) < 1e-6,
+        `full split length ${s.km} km should be one mile`,
+      );
+    }
+    const partial = r.splits.find((s) => !s.full);
+    assert.ok(partial && partial.km < MILE_KM, 'trailing partial present');
+  });
+
   it('accumulates elevation gain above the noise floor', () => {
     const r = computeRideStats(buildRide({ kmh: 18, km: 3, climbM: 30 }));
     assert.ok(

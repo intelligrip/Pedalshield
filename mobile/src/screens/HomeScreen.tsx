@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
 import { MainnetStatusChip } from '../components/MainnetStatusChip.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
 import { ConnectWalletCard } from '../components/ConnectWalletCard.tsx';
-import { DISTANCE_UNIT, formatRate } from '../lib/units.ts';
+import {
+  distanceUnit,
+  formatRate,
+  useUnits,
+  setUnitPreference,
+  type UnitPreference,
+} from '../lib/units.ts';
 import { getAccrualBalance, getTreasuryInfo } from '../lib/api.ts';
 import { DEFAULT_ZAT_PER_KM } from '../lib/config.ts';
 import { onConnectedUAChange } from '../wallet/connectedWallet.ts';
@@ -18,6 +24,7 @@ function zecFromZat(zat: number): string {
 }
 
 export function HomeScreen({ navigation }: { navigation: any }) {
+  useUnits(); // re-render when the rider toggles mi/km
   const [streakDays] = useState<number>(4);
   const [zatPerKm, setZatPerKm] = useState<number>(DEFAULT_ZAT_PER_KM);
   const [lifetimeZat, setLifetimeZat] = useState<number | null>(null);
@@ -91,9 +98,16 @@ export function HomeScreen({ navigation }: { navigation: any }) {
       </Card>
 
       <View style={styles.statsRow}>
-        <View style={styles.statCol}><Stat label="This week" value="42.3" unit={DISTANCE_UNIT} /></View>
+        <View style={styles.statCol}><Stat label="This week" value="42.3" unit={distanceUnit()} /></View>
         <View style={styles.statCol}><Stat label="Avg score" value="0.91" /></View>
       </View>
+
+      <Card>
+        <View style={styles.unitsRow}>
+          <Text style={styles.cardLabel}>UNITS</Text>
+          <UnitToggle />
+        </View>
+      </Card>
 
       <Card>
         <Text style={styles.cardLabel}>READY TO RIDE</Text>
@@ -102,6 +116,34 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         </Text>
       </Card>
     </ScreenContainer>
+  );
+}
+
+/** Segmented mi / km / Auto control. Updates the whole app live. */
+function UnitToggle() {
+  const { pref } = useUnits();
+  const options: { key: UnitPreference; label: string }[] = [
+    { key: 'imperial', label: 'mi' },
+    { key: 'metric', label: 'km' },
+    { key: 'auto', label: 'Auto' },
+  ];
+  return (
+    <View style={styles.segment}>
+      {options.map((o) => {
+        const active = pref === o.key;
+        return (
+          <Pressable
+            key={o.key}
+            onPress={() => setUnitPreference(o.key)}
+            style={[styles.segmentItem, active && styles.segmentItemActive]}
+          >
+            <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -119,6 +161,32 @@ const styles = StyleSheet.create({
     letterSpacing: theme.font.h1.letterSpacing,
   },
   tagline: { color: theme.color.textDim, fontSize: 15 },
+  unitsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: theme.color.bg,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    padding: 3,
+    gap: 2,
+  },
+  segmentItem: {
+    paddingHorizontal: theme.space.md,
+    paddingVertical: 6,
+    borderRadius: theme.radius.pill,
+  },
+  segmentItemActive: { backgroundColor: theme.color.accent },
+  segmentText: {
+    color: theme.color.textDim,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  segmentTextActive: { color: '#0A0E1A' },
   cardLabel: {
     color: theme.color.textDim,
     fontSize: theme.font.label.size,
