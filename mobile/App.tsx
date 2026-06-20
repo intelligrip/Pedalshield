@@ -6,6 +6,7 @@ import { Navigation } from './src/app/Navigation.tsx';
 import { theme } from './src/app/theme.ts';
 import { loadConnectedWallet } from './src/wallet/connectedWallet.ts';
 import { loadUnitPreference } from './src/lib/units.ts';
+import { loadRideHistory } from './src/ride/rideHistory.ts';
 
 const navTheme = {
   dark: true,
@@ -29,6 +30,7 @@ export default function App() {
     // disk so the Home/Ride/Privacy screens know where payouts go before
     // anything renders. Best-effort: failure just means "not connected yet".
     void loadUnitPreference(); // restore mi/km choice before screens render
+    void loadRideHistory(); // restore banked rides (history + YTD)
     loadConnectedWallet()
       .catch((err) => {
         console.error('[boot] connected-wallet restore failed:', err);

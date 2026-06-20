@@ -6,16 +6,25 @@ import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
 import { ConnectWalletCard } from '../components/ConnectWalletCard.tsx';
+import { Linking } from 'react-native';
 import {
   distanceUnit,
+  formatDistance,
   formatRate,
   useUnits,
   setUnitPreference,
   type UnitPreference,
 } from '../lib/units.ts';
 import { getAccrualBalance, getTreasuryInfo } from '../lib/api.ts';
-import { DEFAULT_ZAT_PER_KM } from '../lib/config.ts';
+import { DEFAULT_ZAT_PER_KM, EXPLORER_TX_BASE } from '../lib/config.ts';
 import { onConnectedUAChange } from '../wallet/connectedWallet.ts';
+import {
+  onRideHistoryChange,
+  getRides,
+  getSummary,
+  type RideRecord,
+  type HistorySummary,
+} from '../ride/rideHistory.ts';
 
 /** ZEC string from a zatoshi number, trimmed to 8 dp without trailing zeros. */
 function zecFromZat(zat: number): string {
@@ -29,6 +38,18 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   const [zatPerKm, setZatPerKm] = useState<number>(DEFAULT_ZAT_PER_KM);
   const [lifetimeZat, setLifetimeZat] = useState<number | null>(null);
   const [ridesCount, setRidesCount] = useState<number>(0);
+  const [summary, setSummary] = useState<HistorySummary>(getSummary());
+  const [recent, setRecent] = useState<RideRecord[]>(getRides());
+
+  // Live ride history (banked on-device): drives YTD + the recent list.
+  useEffect(
+    () =>
+      onRideHistoryChange(() => {
+        setSummary(getSummary());
+        setRecent(getRides());
+      }),
+    [],
+  );
 
   useEffect(() => {
     // Live reward rate from the treasury (falls back to the default).
@@ -98,9 +119,22 @@ export function HomeScreen({ navigation }: { navigation: any }) {
       </Card>
 
       <View style={styles.statsRow}>
-        <View style={styles.statCol}><Stat label="This week" value="42.3" unit={distanceUnit()} /></View>
-        <View style={styles.statCol}><Stat label="Avg score" value="0.91" /></View>
+        <View style={styles.statCol}>
+          <Stat
+            label="This year"
+            value={formatDistance(summary.ytdKm)}
+            unit={distanceUnit()}
+          />
+        </View>
+        <View style={styles.statCol}>
+          <Stat label="Rides this year" value={String(summary.ytdRides)} />
+        </View>
       </View>
+
+      <Card>
+        <Text style={styles.cardLabel}>RECENT RIDES</Text>
+        <RecentRides rides={recent} />
+      </Card>
 
       <Card>
         <View style={styles.unitsRow}>
@@ -116,6 +150,53 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         </Text>
       </Card>
     </ScreenContainer>
+  );
+}
+
+/** Recent banked rides (newest first). Stats only — no route is stored. */
+function RecentRides({ rides }: { rides: RideRecord[] }) {
+  if (rides.length === 0) {
+    return (
+      <Text style={styles.emptyRides}>
+        No rides yet. Tap the Ride tab to bank your first one.
+      </Text>
+    );
+  }
+  const shown = rides.slice(0, 5);
+  return (
+    <View>
+      {shown.map((r) => {
+        const date = new Date(r.completedAt).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        });
+        const statusColor =
+          r.status === 'verified'
+            ? theme.color.success
+            : r.status === 'review'
+              ? theme.color.warning
+              : theme.color.textMuted;
+        return (
+          <View key={r.id} style={styles.rideRow}>
+            <View style={[styles.rideDot, { backgroundColor: statusColor }]} />
+            <Text style={styles.rideDate}>{date}</Text>
+            <Text style={styles.rideDist}>
+              {formatDistance(r.distanceKm)} {distanceUnit()}
+            </Text>
+            {r.txid ? (
+              <Pressable
+                onPress={() => Linking.openURL(`${EXPLORER_TX_BASE}${r.txid}`)}
+                hitSlop={6}
+              >
+                <Text style={styles.rideProof}>proof ›</Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.ridePending}>—</Text>
+            )}
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -187,6 +268,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   segmentTextActive: { color: '#0A0E1A' },
+  emptyRides: { color: theme.color.textDim, fontSize: 14, lineHeight: 20 },
+  rideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space.md,
+    paddingVertical: 8,
+    borderBottomColor: theme.color.border,
+    borderBottomWidth: 1,
+  },
+  rideDot: { width: 8, height: 8, borderRadius: 4 },
+  rideDate: { color: theme.color.textDim, fontSize: 13, width: 54 },
+  rideDist: {
+    color: theme.color.text,
+    fontSize: 15,
+    fontWeight: '700',
+    flex: 1,
+    fontVariant: ['tabular-nums'],
+  },
+  rideProof: {
+    color: theme.color.accent,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  ridePending: { color: theme.color.textMuted, fontSize: 13 },
   cardLabel: {
     color: theme.color.textDim,
     fontSize: theme.font.label.size,

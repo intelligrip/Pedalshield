@@ -32,8 +32,9 @@ A native in-app wallet (`mobile/src/wallet/nativeWallet.ts`, RN bridge to `Zcash
 ## P2 — the ride-report + history feature (founder-requested)
 - ✅ **mph / km toggle — DONE.** User-overridable unit preference (`src/lib/units.ts`: `setUnitPreference`/`useUnits`, persisted via AsyncStorage, defaults to locale). A segmented mi/km/Auto control on the Home screen updates the whole app live; splits compute per-mile for US riders (`computeRideStats(raw, splitLenKm)`, tested).
 - ✅ **Last-ride report — DONE (display).** `RideStatsCard` shows distance, moving/stopped time, avg/max speed, elevation gain, and per-unit split bars with the fastest split starred — all computed on-device.
-- **Still open — persistence.** Rides are in-memory only (the "no memory of ride" gap): bank every finished ride to disk (`expo-sqlite` or AsyncStorage) — date, distance, time, speeds, elevation, integrity, ZEC earned, txid — so history survives restarts.
-- **Still open — Year-to-date cumulative miles** on the home screen (needs the persistence above).
+- ✅ **Persistence — DONE.** Every finished ride is banked on-device in `src/ride/rideHistory.ts` (AsyncStorage + in-memory fallback, capped at 1000, **stats only — no route stored**). Saved on completion; the payout txid is attached when the reward settles (`PayoutCard` → `updateRideTxid`). Pure aggregation (`summarizeHistory`) is unit-tested. History survives restarts.
+- ✅ **Year-to-date — DONE.** Home shows real YTD distance + ride count and a "Recent rides" list (date, distance, status, on-chain proof link), driven live from the banked history.
+- **Optional next:** migrate the store to `expo-sqlite` if a rider accumulates thousands of rides (JSON-in-AsyncStorage is fine to that scale); a dedicated full-history screen beyond the recent-5 list.
 
 ## P3 — polish for launch
 - Onboarding / first-run explainer (privacy framing: "your route never leaves your phone").

@@ -18,6 +18,7 @@ import { Stat } from '../components/Stat.tsx';
 import { theme } from '../app/theme.ts';
 import { RideSession, type RideSessionSnapshot } from '../ride/rideSession.ts';
 import { computeRideStats } from '../ride/rideStats.ts';
+import { addRide } from '../ride/rideHistory.ts';
 import { RideStatsCard } from '../components/RideStatsCard.tsx';
 import type { RawRide } from '../verification/types.ts';
 import {
@@ -510,6 +511,25 @@ function PostRide({
       ? theme.color.warning
       : theme.color.danger;
   const [revealOpen, setRevealOpen] = useState(false);
+
+  // Bank the finished ride once, so history + YTD survive restarts. Stats
+  // only — no route is stored. Rejected rides aren't banked (0 credited km).
+  const savedRef = useRef(false);
+  useEffect(() => {
+    if (savedRef.current || !report || result.status === 'rejected') return;
+    savedRef.current = true;
+    void addRide({
+      id: result.rideId,
+      completedAt: Date.now(),
+      distanceKm: result.verifiedKm,
+      movingS: report.movingS,
+      avgKmh: report.avgMovingKmh,
+      maxKmh: report.maxKmh,
+      elevationGainM: report.elevationGainM,
+      integrityScore: result.integrityScore,
+      status: result.status,
+    });
+  }, [report, result.rideId, result.status]);
 
   // Balance movement: either a real autonomous per-claim Orchard payout
   // (classic path) or off-chain accrual + later batched settlement

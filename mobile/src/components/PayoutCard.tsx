@@ -20,6 +20,7 @@ import {
   setRecipientUA,
 } from '../lib/config.ts';
 import { validateZcashUA } from '../wallet/connectedWallet.ts';
+import { updateRideTxid } from '../ride/rideHistory.ts';
 
 type Phase = 'idle' | 'submitting' | 'polling' | 'paid' | 'accrued' | 'error';
 
@@ -128,6 +129,7 @@ export function PayoutCard({
       const data = JSON.parse(text) as { txid?: string; status?: string };
       if (data.txid) {
         setTxid(data.txid);
+        void updateRideTxid(rideId, data.txid);
         setPhase('paid');
         setAccruedBalance(null);
         setMessage('');
@@ -181,6 +183,7 @@ export function PayoutCard({
       if (row.status === 'paid' && row.payout_txid) {
         setStage(3);
         setTxid(row.payout_txid);
+        void updateRideTxid(rideId, row.payout_txid);
         setPhase('paid');
         setMessage('');
       } else if (row.status === 'rejected') {
