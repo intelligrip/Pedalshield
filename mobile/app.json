@@ -37,6 +37,9 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
+        "ACTIVITY_RECOGNITION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
         "ACTIVITY_RECOGNITION"
       ]
     },
@@ -48,6 +51,12 @@
     "owner": "sbnewman",
     "plugins": [
       "expo-status-bar"
-    ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b19e40fc-4c49-4d25-8f54-e59cee317dae"
+    }
   }
 }
