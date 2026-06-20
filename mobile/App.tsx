@@ -4,7 +4,6 @@ import { StatusBar, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { Navigation } from './src/app/Navigation.tsx';
 import { theme } from './src/app/theme.ts';
-import { MockWallet, setWallet, zecToZatoshi } from './src/wallet/index.ts';
 import { loadConnectedWallet } from './src/wallet/connectedWallet.ts';
 
 const navTheme = {
@@ -24,44 +23,16 @@ export default function App() {
   const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Restore the rider's connected (bring-your-own) Zcash address from
-    // disk so the vault + payouts know where to send before any screen
-    // renders. Best-effort: failure just means "not connected yet".
-    loadConnectedWallet().catch(() => {});
-
-    // Boot the wallet. MockWallet for simulator / dev; swap in
-    // NativeWallet from ./src/wallet/nativeWallet for device builds.
-    const wallet = new MockWallet({
-      initialZatoshi: zecToZatoshi('0.0142'),
-      syncTickMs: 50,
-    });
-    wallet
-      .init({
-        network: 'mainnet',
-        lightwalletdHost: 'mainnet.lightwalletd.com:9067',
-        seedPhrase: {
-          words: [
-            'abandon','abandon','abandon','abandon','abandon','abandon',
-            'abandon','abandon','abandon','abandon','abandon','abandon',
-            'abandon','abandon','abandon','abandon','abandon','abandon',
-            'abandon','abandon','abandon','abandon','abandon','art',
-          ],
-          birthdayHeight: 2_800_000,
-        },
-        storageDir: '/tmp/pedalshield-mock',
-      })
-      .then(() => {
-        setWallet(wallet);
-        return wallet.startSync();
-      })
-      .then(() => setReady(true))
+    // Pedalshield is non-custodial: there is no in-app wallet to boot. We
+    // only restore the rider's connected (bring-your-own) Zcash address from
+    // disk so the Home/Ride/Privacy screens know where payouts go before
+    // anything renders. Best-effort: failure just means "not connected yet".
+    loadConnectedWallet()
       .catch((err) => {
-        // Never dead-end on a wallet-boot hiccup: surface the error and
-        // let the app load anyway (wallet features degrade gracefully).
-        console.error('[boot] wallet init/sync failed:', err);
+        console.error('[boot] connected-wallet restore failed:', err);
         setBootError(String(err?.message ?? err));
-        setReady(true);
-      });
+      })
+      .finally(() => setReady(true));
   }, []);
 
   if (!ready) {
@@ -69,7 +40,7 @@ export default function App() {
       <View style={styles.boot}>
         <StatusBar barStyle="light-content" backgroundColor={theme.color.bg} />
         <Text style={styles.bootText}>Pedalshield</Text>
-        <Text style={styles.bootSub}>booting shielded wallet...</Text>
+        <Text style={styles.bootSub}>Ride private. Earn shielded.</Text>
         {bootError ? <Text style={styles.bootErr}>{bootError}</Text> : null}
       </View>
     );

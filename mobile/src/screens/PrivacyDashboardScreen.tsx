@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { theme } from '../app/theme.ts';
-import { getWallet } from '../wallet/walletManager.ts';
+import { getConnectedUA, onConnectedUAChange } from '../wallet/connectedWallet.ts';
 import { shortAddress } from '../lib/format.ts';
 
 const NEVER_COLLECTED = [
@@ -22,14 +22,11 @@ const WHAT_LEAVES_DEVICE = [
 ];
 
 export function PrivacyDashboardScreen() {
-  const [address, setAddress] = useState<string>('');
-  useEffect(() => {
-    try {
-      getWallet().getAddress().then((a) => setAddress(a.ua));
-    } catch {
-      // wallet not ready yet
-    }
-  }, []);
+  // Non-custodial: this is the rider's OWN connected Unified Address, not a
+  // wallet we hold. Updates live when they connect/change it.
+  const [address, setAddress] = useState<string>(getConnectedUA());
+  useEffect(() => onConnectedUAChange(setAddress), []);
+  const connected = address.startsWith('u1');
 
   return (
     <ScreenContainer>
@@ -60,12 +57,14 @@ export function PrivacyDashboardScreen() {
       </Card>
 
       <Card>
-        <Text style={styles.sectionLabel}>YOUR SHIELDED ADDRESS</Text>
-        <Text style={styles.address}>{address ? shortAddress(address, 12, 8) : 'syncing...'}</Text>
+        <Text style={styles.sectionLabel}>YOUR CONNECTED WALLET</Text>
+        <Text style={styles.address}>
+          {connected ? shortAddress(address, 12, 8) : 'No wallet connected yet'}
+        </Text>
         <Text style={styles.note}>
-          A Unified Address with an Orchard receiver. Treasury payouts arrive
-          here as shielded Zcash transactions - amounts and recipients are
-          private on-chain.
+          {connected
+            ? 'Your own Zcash Unified Address. Payouts arrive here as shielded transactions — amounts and recipients are private on-chain. We never hold your keys or your funds.'
+            : 'Connect a Zcash wallet you control on the Home tab to receive shielded payouts. Pedalshield is non-custodial — your keys and ZEC stay in your wallet.'}
         </Text>
       </Card>
 
@@ -73,9 +72,9 @@ export function PrivacyDashboardScreen() {
         <Text style={styles.sectionLabel}>YOU CAN PROVE IT</Text>
         <Text style={styles.note}>
           The on-device verification engine, claim payload definition, and
-          privacy assertion are open source under MIT. The Streak Vault
-          shows your balance straight from the Zcash light-client SDK -
-          nothing we control.
+          privacy assertion are open source under MIT. And because Pedalshield
+          is non-custodial, your ZEC lives in your own wallet — there's no
+          balance for us to control or freeze.
         </Text>
       </Card>
     </ScreenContainer>
