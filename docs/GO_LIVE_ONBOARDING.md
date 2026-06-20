@@ -19,7 +19,7 @@ app must be rebuilt — a JS-only update won't link it.
 cd ~/Pedalshield/mobile
 git checkout sdk-upgrade
 git pull
-npx expo install @react-native-async-storage/async-storage   # links the native module
+npx expo install @react-native-async-storage/async-storage expo-keep-awake   # link native modules
 npm install
 eas build --platform ios --profile production                 # ~20–40 min in the cloud
 ```

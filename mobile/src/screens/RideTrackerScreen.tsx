@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -134,6 +135,8 @@ export function RideTrackerScreen() {
         </View>
       </View>
 
+      {snap.state === 'active' && <GpsBanner />}
+
       <View style={styles.actions}>
         {snap.state === 'idle' && (
           <Button
@@ -185,35 +188,120 @@ export function RideTrackerScreen() {
  */
 function GpsChip() {
   const [q, setQ] = useState<GpsQuality>({
+    status: 'idle',
     accuracy: null,
     usable: false,
     at: 0,
   });
-  const [, setBeat] = useState(0);
 
   useEffect(() => subscribeGpsQuality(setQ), []);
-  // Re-evaluate staleness every 2s so a lost signal dims the chip.
-  useEffect(() => {
-    const id = setInterval(() => setBeat((b) => b + 1), 2000);
-    return () => clearInterval(id);
-  }, []);
 
-  const stale = q.at === 0 || Date.now() - q.at > 6000;
-  const label = stale
-    ? 'GPS …'
-    : q.usable
-      ? `GPS ±${Math.round(q.accuracy ?? 0)} m`
-      : 'GPS weak';
-  const color = stale
-    ? theme.color.textMuted
-    : q.usable
-      ? theme.color.success
-      : theme.color.warning;
+  let label: string;
+  let color: string;
+  switch (q.status) {
+    case 'locked':
+      label = `GPS ±${Math.round(q.accuracy ?? 0)} m`;
+      color = theme.color.success;
+      break;
+    case 'weak':
+      label = 'GPS weak';
+      color = theme.color.warning;
+      break;
+    case 'lost':
+      label = 'GPS lost';
+      color = theme.color.danger;
+      break;
+    case 'precise-off':
+      label = 'Precise off';
+      color = theme.color.danger;
+      break;
+    case 'denied':
+      label = 'No location';
+      color = theme.color.danger;
+      break;
+    default:
+      label = 'GPS …';
+      color = theme.color.textMuted;
+  }
 
   return (
     <View style={[styles.gpsChip, { borderColor: color }]}>
       <View style={[styles.gpsDot, { backgroundColor: color }]} />
       <Text style={[styles.gpsText, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * Loud, actionable banner for the states where the rider would otherwise
+ * silently record nothing. Permission denied / Precise Location off get an
+ * "Open Settings" deep link; acquiring / lost get a plain explanation so the
+ * rider knows the ride isn't being undercounted by accident.
+ */
+function GpsBanner() {
+  const [q, setQ] = useState<GpsQuality>({
+    status: 'idle',
+    accuracy: null,
+    usable: false,
+    at: 0,
+  });
+  useEffect(() => subscribeGpsQuality(setQ), []);
+
+  if (q.status === 'locked' || q.status === 'idle') return null;
+
+  let title: string;
+  let body: string;
+  let action: 'settings' | null = null;
+  let tone: string = theme.color.warning;
+
+  switch (q.status) {
+    case 'denied':
+      title = 'Location is off';
+      body = 'Pedalshield needs location to measure your ride. Nothing is counting.';
+      action = 'settings';
+      tone = theme.color.danger;
+      break;
+    case 'precise-off':
+      title = 'Precise Location is off';
+      body = 'Your distance won’t count until Precise Location is on for Pedalshield.';
+      action = 'settings';
+      tone = theme.color.danger;
+      break;
+    case 'lost':
+      title = 'GPS signal lost';
+      body = 'Hang tight — distance pauses until the signal comes back.';
+      tone = theme.color.warning;
+      break;
+    case 'weak':
+      title = 'Weak GPS signal';
+      body = 'Fixes are too noisy to count right now. Move to open sky if you can.';
+      tone = theme.color.warning;
+      break;
+    default: // 'acquiring'
+      title = 'Acquiring GPS…';
+      body = 'Distance starts counting the moment your location locks on.';
+      tone = theme.color.accent;
+  }
+
+  return (
+    <View style={[styles.gpsBanner, { borderLeftColor: tone }]}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.gpsBannerTitle, { color: tone }]}>{title}</Text>
+        <Text style={styles.gpsBannerBody}>{body}</Text>
+      </View>
+      {action === 'settings' && (
+        <Pressable
+          onPress={() =>
+            void (
+              Linking as unknown as { openSettings: () => Promise<void> }
+            ).openSettings()
+          }
+          hitSlop={8}
+          style={styles.gpsBannerBtn}
+        >
+          <Text style={styles.gpsBannerBtnText}>Open Settings</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -421,6 +509,35 @@ const styles = StyleSheet.create({
   },
   gpsDot: { width: 6, height: 6, borderRadius: 3 },
   gpsText: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4 },
+  gpsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space.md,
+    marginTop: theme.space.md,
+    padding: theme.space.md,
+    borderRadius: theme.radius.md,
+    borderLeftWidth: 4,
+    backgroundColor: theme.color.bgElev,
+  },
+  gpsBannerTitle: { fontSize: 14, fontWeight: '800' },
+  gpsBannerBody: {
+    color: theme.color.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  gpsBannerBtn: {
+    paddingHorizontal: theme.space.md,
+    paddingVertical: theme.space.sm,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.color.accent,
+  },
+  gpsBannerBtnText: {
+    color: theme.color.accent,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   revealRow: {
     flexDirection: 'row',
     alignItems: 'center',

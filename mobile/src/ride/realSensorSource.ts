@@ -6,34 +6,54 @@
  * addMotionSample. Same contract as SyntheticSensorSource, so it drops
  * into RideTrackerScreen interchangeably.
  *
+ * Distance gating + acquisition state live in `gpsGate.ts` (pure, tested):
+ * we don't count distance until GPS truly locks (fixing zero-distance cold
+ * starts), and we surface a rich status (acquiring / locked / weak / lost /
+ * precise-off / denied) so the rider always knows whether the ride is
+ * counting. While riding we hold the screen awake so foreground tracking
+ * doesn't die when the display would otherwise sleep.
+ *
  * Everything stays on device: samples are pushed straight into the
  * in-memory RideSession and never leave the phone.
  */
 
 import type { RideSession } from './rideSession.ts';
+import {
+  GpsGate,
+  DEFAULT_GPS_GATE_CONFIG,
+  type GpsStatus,
+} from './gpsGate.ts';
 
-// NOTE: expo-location / expo-sensors are imported lazily inside init() so
-// merely importing this module never touches a native module. That keeps
-// the app from crashing on a dev client that wasn't built with these
-// modules - real GPS simply no-ops with a warning until the native build
-// is installed, while the Demo route keeps working everywhere.
+// NOTE: expo-* are imported lazily inside init() so merely importing this
+// module never touches a native module. On a dev client without these
+// modules, real GPS simply no-ops while the Demo route keeps working.
 
 const GRAVITY = 9.81;
 
+/** Status the UI cares about: gate statuses plus permission 'denied'. */
+export type TrackingStatus = GpsStatus | 'denied';
+
 /**
- * Live GPS fix quality, published for UI consumption (signal chip on the
- * ride screen). Stays on device like everything else here.
+ * Live GPS / tracking state, published for UI consumption (signal chip and
+ * the actionable banner on the ride screen). Stays on device.
  */
 export interface GpsQuality {
+  /** Acquisition / signal / permission state. */
+  status: TrackingStatus;
   /** Horizontal accuracy in metres of the last fix; null = no fix yet. */
   accuracy: number | null;
-  /** True when the fix passed the verifier's 30 m gate and was counted. */
+  /** True when GPS is locked and fixes are counting toward distance. */
   usable: boolean;
   /** Epoch ms of the last fix (0 = none this session). */
   at: number;
 }
 
-let lastQuality: GpsQuality = { accuracy: null, usable: false, at: 0 };
+let lastQuality: GpsQuality = {
+  status: 'idle',
+  accuracy: null,
+  usable: false,
+  at: 0,
+};
 const qualityListeners = new Set<(q: GpsQuality) => void>();
 
 function publishGpsQuality(q: GpsQuality): void {
@@ -41,7 +61,7 @@ function publishGpsQuality(q: GpsQuality): void {
   for (const l of qualityListeners) l(q);
 }
 
-/** Subscribe to GPS fix quality; fires immediately with the latest value. */
+/** Subscribe to GPS / tracking status; fires immediately with the latest. */
 export function subscribeGpsQuality(cb: (q: GpsQuality) => void): () => void {
   cb(lastQuality);
   qualityListeners.add(cb);
@@ -54,12 +74,21 @@ export class RealSensorSource {
   private session: RideSession | null = null;
   private geoSub: { remove(): void } | null = null;
   private accelSub: { remove(): void } | null = null;
+  private tickTimer: ReturnType<typeof setInterval> | null = null;
+  private gate: GpsGate | null = null;
+  private keepAwakeActive = false;
   private stopped = false;
 
   start(session: RideSession): void {
     this.session = session;
     this.stopped = false;
-    publishGpsQuality({ accuracy: null, usable: false, at: 0 });
+    this.gate = new GpsGate(Date.now(), DEFAULT_GPS_GATE_CONFIG);
+    publishGpsQuality({
+      status: 'acquiring',
+      accuracy: null,
+      usable: false,
+      at: 0,
+    });
     void this.init();
   }
 
@@ -69,7 +98,13 @@ export class RealSensorSource {
     this.geoSub = null;
     this.accelSub?.remove();
     this.accelSub = null;
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+    this.releaseKeepAwake();
     this.session = null;
+    this.gate = null;
   }
 
   private async init(): Promise<void> {
@@ -79,13 +114,33 @@ export class RealSensorSource {
 
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        // eslint-disable-next-line no-console
-        console.warn('Pedalshield: location permission not granted');
+        publishGpsQuality({
+          status: 'denied',
+          accuracy: null,
+          usable: false,
+          at: 0,
+        });
         return;
       }
       if (this.stopped) return;
 
-      // GPS -> geo samples (distance).
+      // Keep the screen awake so foreground GPS keeps flowing during the ride.
+      await this.acquireKeepAwake();
+
+      // Periodic tick lets the gate flip to 'lost' / 'precise-off' even when
+      // no fixes are arriving (tunnel, lock screen, reduced accuracy).
+      this.tickTimer = setInterval(() => {
+        if (!this.gate || this.stopped) return;
+        const d = this.gate.onTick(Date.now());
+        publishGpsQuality({
+          status: d.status,
+          accuracy: d.accuracy,
+          usable: d.status === 'locked',
+          at: lastQuality.at,
+        });
+      }, 1500);
+
+      // GPS -> geo samples (distance), gated by the acquisition state machine.
       this.geoSub = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.BestForNavigation,
@@ -93,19 +148,23 @@ export class RealSensorSource {
           distanceInterval: 3, // metres
         },
         (loc) => {
-          if (!this.session) return;
+          if (!this.session || !this.gate) return;
           const c = loc.coords;
-          // Drop low-confidence fixes. Raw GPS (especially the cold-start
-          // fix) can jump tens of metres, which the verifier reads as a
-          // >90 km/h "teleport" hard-fail. Only feed tight fixes so a real
-          // ride doesn't get rejected by GPS noise.
-          const acc = c.accuracy ?? 999;
-          publishGpsQuality({
-            accuracy: acc === 999 ? null : acc,
-            usable: acc <= 30,
-            at: Date.now(),
+          const at = loc.timestamp ?? Date.now();
+          const decision = this.gate.onFix({
+            accuracy: c.accuracy ?? 999,
+            at,
           });
-          if (acc > 30) return;
+          publishGpsQuality({
+            status: decision.status,
+            accuracy: decision.accuracy,
+            usable: decision.status === 'locked',
+            at,
+          });
+          // Only feed counted fixes: pre-lock cold-start noise and post-lock
+          // weak fixes are skipped so a real ride isn't undercounted OR
+          // polluted with jumpy positions.
+          if (!decision.count) return;
           try {
             this.session.addGeoSample({
               lat: c.latitude,
@@ -113,7 +172,7 @@ export class RealSensorSource {
               altitude: c.altitude ?? 0,
               accuracy: c.accuracy ?? 10,
               speed: c.speed && c.speed > 0 ? c.speed : 0,
-              timestamp: loc.timestamp ?? Date.now(),
+              timestamp: at,
             });
           } catch {
             this.stop();
@@ -140,5 +199,28 @@ export class RealSensorSource {
       // eslint-disable-next-line no-console
       console.warn('Pedalshield: sensor init failed', e);
     }
+  }
+
+  private async acquireKeepAwake(): Promise<void> {
+    try {
+      const KeepAwake = await import('expo-keep-awake');
+      await KeepAwake.activateKeepAwakeAsync('pedalshield-ride');
+      this.keepAwakeActive = true;
+    } catch {
+      // expo-keep-awake not linked (e.g. bare dev client) — non-fatal.
+    }
+  }
+
+  private releaseKeepAwake(): void {
+    if (!this.keepAwakeActive) return;
+    this.keepAwakeActive = false;
+    void (async () => {
+      try {
+        const KeepAwake = await import('expo-keep-awake');
+        await KeepAwake.deactivateKeepAwake('pedalshield-ride');
+      } catch {
+        /* non-fatal */
+      }
+    })();
   }
 }
