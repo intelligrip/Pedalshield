@@ -32,7 +32,7 @@ Install the build (TestFlight internal, or the `.ipa` via the EAS link) and
 check the wallet flow end to end:
 
 - Home shows **"Connect your Zcash wallet"** (not `u1mock…`).
-- Paste a real Unified Address from Zashi → it saves, shows "Connected".
+- Paste a real Unified Address from Zodl → it saves, shows "Connected".
 - Force-quit and reopen → the address is still there (persistence works).
 - Do a short ride → it pays out to that address; Home shows lifetime ZEC.
 

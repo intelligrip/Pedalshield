@@ -286,7 +286,7 @@ export function PayoutCard({
       ) : (
         <>
           <Text style={styles.help}>
-            Paste your Zashi Unified Address. The treasury builds and
+            Paste your Zodl (or any Zcash) Unified Address. The treasury builds and
             broadcasts a real Orchard transaction automatically — no
             operator, route stays on device.
           </Text>

@@ -40,11 +40,16 @@ Store. Reasons below._
 
 ## Treasury math for 100 riders
 
-- 100 riders × 10 rides/mo × 9 km × 0.0002 ZEC/km ≈ **1.8 ZEC/mo** (~$770 at
-  $426) + ~0.1 ZEC fees. Current treasury: 0.0096 ZEC. **Fund ~2 ZEC/mo.**
-- Knobs if that's too hot: drop ZAT_PER_KM (env var, no redeploy), lower
-  per-ride cap, or cap rides/rider/day via the anomaly module (wire it in —
-  it exists).
+- Reward is pegged to **carbon value: $0.006/mile** (= $0.003728/km). 100 riders
+  × 10 rides/mo × 9 km = 9,000 km/mo → **≈ $34/mo** in payouts (~**0.07 ZEC/mo**
+  at ZEC ≈ $470) + negligible batched fees. That's ~25× cheaper than the old
+  flat 0.0002 ZEC/km. **Fund ~0.1 ZEC/mo** (well within reach).
+- Because the rate is USD-pegged to carbon, the **ZEC** burn shrinks as ZEC
+  rises — re-peg with `deploy/repeg_carbon_rate.sh` so a mile always pays the
+  carbon value.
+- Knobs if needed: the per-ride cap (0.005 ZEC) now never binds at this rate
+  (~630 km to hit it) — it's just a safety ceiling; or cap rides/rider/day via
+  the anomaly module (wire it in — it exists).
 
 ## Timeline overlay (vs TIMELINE.md)
 
@@ -65,7 +70,7 @@ GPS route is verified on your phone and never uploaded — only a verified
 distance total leaves the device. Verified rides settle a small shielded
 Zcash reward to the wallet address you provide. This beta requires an iPhone
 with GPS, outdoor rides, and a Zcash shielded address (we suggest the free
-Zashi wallet). Rewards are small and capped — this is a privacy product, not
+Zodl wallet). Rewards are small and capped — this is a privacy product, not
 an income app.
 
 **Beta App Review Notes:** The app tracks bike rides using GPS/motion sensors,

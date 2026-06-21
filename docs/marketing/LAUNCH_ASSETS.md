@@ -18,9 +18,9 @@ Why I think this matters for Zcash specifically: it manufactures **recurring, re
 
 What's real today (with receipts in the README):
 - Autonomous Orchard shielded payouts proven on mainnet (real txids), NU6.2-current.
-- **Non-custodial by design:** riders connect a Zcash wallet they already control (Zashi/Zodl) and earn real shielded ZEC straight to it — we never hold keys or funds.
+- **Non-custodial by design:** riders connect a Zcash wallet they already control (Zodl) and earn real shielded ZEC straight to it — we never hold keys or funds.
 - Open source (MIT), hand-rolled spend pipeline against librustzcash — no wallet SDK.
-- Honest about limits: payouts are small (0.0002 ZEC/km, capped), anti-cheat is layered not perfect, ZK route proofs are roadmap.
+- Honest about limits: payouts are pegged to carbon value (~$0.006/mile, ~1 lb avoided CO2), small and capped, anti-cheat is layered not perfect, ZK route proofs are roadmap.
 
 Waitlist + demo: **https://pedalshield.app** · Code: github.com/intelligrip/Pedalshield
 
@@ -36,7 +36,7 @@ Would love feedback from this community — especially on the spend pipeline and
 
 **3/** Payouts are **real autonomous shielded Zcash** on mainnet — built on the freshly-upgraded NU6.2 network. A claim arrives, the treasury pays, a real txid lands on-chain. No human in the loop.
 
-**4/** It's non-custodial: you connect a Zcash wallet you already own (Zashi, Zodl…) and rewards land there directly. We never touch your keys or your funds. Your ride, your route, your ZEC — all yours.
+**4/** It's non-custodial: you connect a Zcash wallet you already own (Zodl…) and rewards land there directly. We never touch your keys or your funds. Your ride, your route, your ZEC — all yours.
 
 **4b/** Why Zcash? Because every paid ride is a private payment that grows real demand for shielded ZEC. Mining funds riding; riding funds Zcash.
 

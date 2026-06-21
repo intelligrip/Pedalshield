@@ -87,7 +87,7 @@ pub struct ScanProgress {
 /// declaration order, with no skips.
 pub fn process_block(
     block: &proto::CompactBlock,
-    ivk: &PreparedIncomingViewingKey,
+    ivks: &[PreparedIncomingViewingKey],
     tree: &mut OrchardTree,
     found: &mut Vec<FoundNote>,
     progress: &mut ScanProgress,
@@ -177,8 +177,11 @@ pub fn process_block(
             );
             let domain = OrchardDomain::for_compact_action(&compact_action);
 
-            // Try IVK decryption. Some => the note is ours.
-            let maybe_note = try_compact_note_decryption(&domain, ivk, &compact_action);
+            // Try IVK decryption against every scope (external + internal
+            // change). Some => the note is ours.
+            let maybe_note = ivks
+                .iter()
+                .find_map(|k| try_compact_note_decryption(&domain, k, &compact_action));
 
             // Convert the on-chain cmx to the tree's hash type and append.
             // mark=true ⇔ this action's note is ours.

@@ -23,10 +23,12 @@ export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/
 /**
  * Fallback reward rate in zatoshi per kilometre, used before the live
  * value from GET /treasury/info arrives (or if the backend is offline).
- * Mirrors the backend default (PEDALSHIELD_ZAT_PER_KM = 20_000 =
- * 0.0002 ZEC/km ≈ 0.00032 ZEC/mile).
+ * The reward is pegged to CARBON VALUE: ~1 lb CO2 avoided per mile ×
+ * $0.006/lb = ~$0.006/mile. In ZEC that depends on price, so the live
+ * value (re-pegged by deploy/repeg_carbon_rate.sh) is the source of truth;
+ * this fallback ≈ $0.006/mile at ZEC ~$470 (793 zat/km).
  */
-export const DEFAULT_ZAT_PER_KM = 20_000;
+export const DEFAULT_ZAT_PER_KM = 793;
 
 /**
  * Recipient Unified Address = the rider's connected (bring-your-own) Zcash

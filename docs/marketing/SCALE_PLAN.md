@@ -43,17 +43,25 @@ to.** The fix is accrual + batched settlement, and it's straightforward:
 
 ## 2. Treasury economics & emission schedule
 
-Verified math (per-ride avg 9 km, 10 rides/rider/mo, settlement batched 50/tx):
+Verified math (per-ride avg 9 km ≈ 5.6 mi, 10 rides/rider/mo, batched
+settlement). The reward is now **pegged to carbon value — $0.006/mile
+(≈$0.034/ride)** — the same at every tier (no tapering); burn scales linearly
+with miles ridden. ZEC figures at ZEC ≈ $470; re-peg as price moves
+(`deploy/repeg_carbon_rate.sh`).
 
-| Tier | Riders | ZEC/km | Per ride | Treasury burn/mo | Sub revenue/mo* |
+| Tier | Riders | Rate | Per ride | Treasury burn/mo | Sub revenue/mo* |
 |---|---|---|---|---|---|
-| 10K rides/mo | 1K | 0.0002 (current) | $0.77 | 18 ZEC ($7.7K) | $0.3K |
-| 100K rides/mo | 10K | 0.00005 | $0.19 | 45 ZEC ($19K) | $3K |
-| 1M rides/mo | 100K | 0.00002 | $0.08 | 180 ZEC ($77K) | $30K |
-| 10M rides/mo | 1M | 0.00001 | $0.04 | 900 ZEC ($383K) | $300K |
+| 10K rides/mo | 1K | $0.006/mi (carbon) | $0.034 | ~0.7 ZEC ($335) | $0.3K |
+| 100K rides/mo | 10K | $0.006/mi | $0.034 | ~7 ZEC ($3.4K) | $3K |
+| 1M rides/mo | 100K | $0.006/mi | $0.034 | ~71 ZEC ($33.5K) | $30K |
+| 10M rides/mo | 1M | $0.006/mi | $0.034 | ~713 ZEC ($335K) | $300K |
 
-_*5% premium conversion at $5.99/mo. Settlement fees are noise (≤50 ZEC/mo
-even at 10M rides)._
+_*5% premium conversion at $5.99/mo. Honest read: at the carbon rate, payout
+burn slightly exceeds sub revenue (~$0.34/rider/mo burn vs ~$0.30 at 5%
+conversion), so sponsor-funded pools, grants, or higher conversion close the
+gap. The carbon peg trades a larger burn for a real, defensible "we pay you the
+value of the CO2 you avoided" story. Settlement fees are noise (≤50 ZEC/mo even
+at 10M rides)._
 
 Rules:
 

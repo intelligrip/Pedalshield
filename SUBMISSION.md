@@ -76,7 +76,7 @@ cd ../zcash-service && cargo run --bin treasury_ping
 
 We name our limits out loud — that's the point.
 
-- **Shipped:** autonomous Orchard mainnet payouts (proven, reproducible, deployed, secured); on-device verification + layered anti-cheat; the privacy seam (unit-tested); the iOS app on TestFlight; **non-custodial rider wallet** — riders connect a Zcash wallet they already control (Zashi/Zodl) by entering its Unified Address, and verified rides pay real shielded ZEC straight to it (validated + persisted on-device; `mobile/src/wallet/connectedWallet.ts`, unit-tested).
+- **Shipped:** autonomous Orchard mainnet payouts (proven, reproducible, deployed, secured); on-device verification + layered anti-cheat; the privacy seam (unit-tested); the iOS app on TestFlight; **non-custodial rider wallet** — riders connect a Zcash wallet they already control (Zodl) by entering its Unified Address, and verified rides pay real shielded ZEC straight to it (validated + persisted on-device; `mobile/src/wallet/connectedWallet.ts`, unit-tested).
 - **Roadmap (named, not hidden):**
   - **In-app rider wallet (optional).** Riders already receive real ZEC to their own external wallet (above). A native in-app wallet — the bridge to `ZcashLightClientKit` / `cash.z.ecc.android.sdk`, so the app itself holds a shielded balance — is a convenience enhancement, not a blocker. See `docs/RN_DEV_BRIEF.md`.
   - **FROST-authorized spends.** The Ed25519 FROST ceremony works (`treasury_demo`); treasury spends today use a single hot key (capped, ≤2 ZEC hot). The RedPallas/ZIP-312 swap for shielded spend-auth is roadmap.
@@ -85,7 +85,7 @@ We name our limits out loud — that's the point.
 
 ## Honest-claims rule (held throughout)
 
-Payouts are small (~0.0002 ZEC/km, capped). Privacy is the product, not yield.
+Payouts are small and capped — pegged to carbon value (~$0.006/mile, the worth of ~1 lb of avoided CO2). Privacy is the product, not yield.
 ZK route proofs are roadmap, not live. Anti-cheat is layered, not perfect. No
 token. Every uncertain version and deferred chunk is named in the docs.
 

@@ -22,7 +22,7 @@ import {
 /**
  * Connect-your-wallet card — the non-custodial heart of Pedalshield.
  *
- * The rider brings a Zcash wallet they already control (Zashi, Zodl, ...)
+ * The rider brings a Zcash wallet they already control (Zodl, Ywallet, ...)
  * and pastes its Unified Address. Verified rides pay real shielded ZEC
  * straight there; Pedalshield never holds the rider's keys. This replaces
  * the old mock vault address.
@@ -142,11 +142,11 @@ export function ConnectWalletCard() {
       </View>
 
       <Pressable
-        onPress={() => Linking.openURL('https://electriccoin.co/zashi/')}
+        onPress={() => Linking.openURL('https://zodl.com')}
         hitSlop={8}
       >
         <Text style={styles.helpLink}>
-          No shielded wallet yet? Get a free one in Zashi →
+          No shielded wallet yet? Get the free Zodl wallet →
         </Text>
       </Pressable>
     </Card>

@@ -164,7 +164,7 @@ without broadcast). `treasury_ping` prints `consensus_branch_id`.
 - `POST /claims/{id}/approve` = manual trigger of the same `run_payout` (kept
   for diagnostics/retries).
 - Rate: `compute_payout = distance_m * PEDALSHIELD_ZAT_PER_KM / 1000`, capped.
-  Defaults: **0.0002 ZEC/km (~0.00032 ZEC/mile), 0.005 ZEC/ride cap.**
+  Defaults: **carbon-pegged ~$0.006/mile = 793 zat/km at ZEC ~$470 (re-peg via deploy/repeg_carbon_rate.sh), 0.005 ZEC/ride cap.**
 - Env knobs (no rebuild): `PEDALSHIELD_LIGHTWALLETD`, `PEDALSHIELD_BIRTHDAY`
   (3361149), `PEDALSHIELD_ZAT_PER_KM` (20000), `PEDALSHIELD_MAX_PAYOUT_ZAT`
   (500000), `PEDALSHIELD_AUTO_PAYOUT` (on), `TREASURY_SPENDING_KEY_FILE`,
@@ -191,7 +191,7 @@ New/changed files:
 - `src/lib/config.ts` — `BACKEND_URL = 'http://192.168.0.62:8787'`,
   `EXPLORER_TX_BASE`, session-scoped recipient-UA holder.
 - `src/lib/api.ts` — `submitClaim`, `getClaim`, `pollClaim`.
-- `src/components/PayoutCard.tsx` — paste Zashi UA → submit claim → poll →
+- `src/components/PayoutCard.tsx` — paste Zodl UA → submit claim → poll →
   show real txid + explorer link. Replaced the old fake "FROST queued" card.
 - `src/ride/realSensorSource.ts` — GPS (`expo-location`) + accelerometer
   (`expo-sensors`), **lazy-imported** (so the module is import-safe on any
@@ -240,7 +240,7 @@ output**):
    true (or shows the error), so a wallet-boot hiccup can't dead-end the app.
 
 Once the app loads: Start ride → allow location → move outdoors → Stop →
-verified → paste a real Zashi UA → autonomous payout → real txid. Backend +
+verified → paste a real Zodl UA → autonomous payout → real txid. Backend +
 Metro both running on the Mac, phone on same WiFi.
 
 ---

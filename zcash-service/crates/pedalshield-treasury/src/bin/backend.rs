@@ -528,12 +528,13 @@ async fn treasury_info(State(state): State<AppState>) -> Json<TreasuryInfo> {
         network: "mainnet",
         treasury_ua: state.treasury_ua.clone(),
         spending_key_loaded,
-        lightwalletd_connected: false,
+        lightwalletd_connected: !state.lightwalletd.is_empty(),
         balance_zatoshi: None,
         zat_per_km: state.zat_per_km,
         max_payout_zat: state.max_payout_zat,
-        notes: "v0.5.1 - claim collection only. Lightwalletd + payout \
-                construction land in v0.5.2 / v0.5.3.",
+        notes: "Autonomous Orchard payouts are live: each verified claim \
+                triggers a real shielded spend + broadcast via lightwalletd. \
+                Rewards pegged to carbon value (~$0.006/mile).",
     })
 }
 

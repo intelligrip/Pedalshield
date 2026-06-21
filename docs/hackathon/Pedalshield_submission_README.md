@@ -23,6 +23,10 @@ Live backend health check: `curl -s https://api.pedalshield.app/healthz` → `{"
 
 Pedalshield is a demand engine for Zcash. Every verified ride creates a real shielded transaction from an ordinary, non-crypto person — onboarding everyday people into holding and using private ZEC, which is the adoption the network needs most and can least manufacture on its own. Mining funds riding; riding funds Zcash.
 
+## How the reward is set — carbon value
+
+You don't earn an arbitrary handout; you earn the **value of the carbon you keep out of the air.** Biking one mile instead of driving avoids ~1 lb of CO2, and that avoided pound is priced at ~$0.006 — so each verified mile pays ~$0.006 of shielded ZEC. The rate is pegged to that carbon value and re-pegged as the ZEC price moves (`deploy/repeg_carbon_rate.sh`). It reframes the reward from "crypto for tasks" to **verified, private climate impact, paid in private money.**
+
 ## What it does (the loop)
 
 > real ride → on-device verification → `POST /claim` → autonomous shielded Orchard spend → **real mainnet txid** → ZEC in the rider's own wallet.
@@ -68,4 +72,4 @@ Full setup: `README.md` (60-second quick start), `zcash-service/README.md`, `dep
 
 ## Honest limits
 
-Payouts are small and capped (~0.0002 ZEC/km). Privacy is the product, not yield. ZK route proofs are roadmap. Anti-cheat is layered, not perfect. No token.
+Payouts are small and capped — pegged to carbon value (~$0.006/mile, the worth of ~1 lb of avoided CO2). Privacy is the product, not yield. ZK route proofs are roadmap. Anti-cheat is layered, not perfect. No token.

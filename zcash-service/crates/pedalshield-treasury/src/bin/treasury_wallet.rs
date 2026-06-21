@@ -281,7 +281,7 @@ async fn sync_async(
     while let Some(block) = stream.next().await {
         let block = block.map_err(|e| format!("stream error: {e}"))?;
         let h = block.height;
-        process_block(&block, &prepared_ivk, &mut tree, &mut found, &mut progress)?;
+        process_block(&block, core::slice::from_ref(&prepared_ivk), &mut tree, &mut found, &mut progress)?;
         if h.saturating_sub(last_dot) >= 500 {
             print!(".");
             use std::io::Write;

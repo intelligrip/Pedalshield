@@ -14,7 +14,8 @@ Company: IntelliGrip Industries. Product: Pedalshield._
    layer soon. A bridged token adds securities + bridge risk and abandons the
    working differentiator: autonomous shielded mainnet payouts, proven by txid.
 3. **Honest-claims rule:** ZK route proofs are roadmap, not present. Payouts are
-   small (~0.0002 ZEC/km, capped). Privacy is the product, not yield.
+   pegged to carbon value (~$0.006/mile = ~1 lb avoided CO2), small and capped.
+   Privacy is the product, not yield.
 
 ## Positioning
 
@@ -46,11 +47,14 @@ integrations, token launches, NFT marketplaces.
 
 ## Unit economics (honest version)
 
-- Payout cost: 0.0002 ZEC/km, capped 0.005 ZEC/ride (~$0.09/km, ~$2.13 cap at
-  $426/ZEC — recheck at current price; ZEC moved 50% this month).
-- A 9 km ride costs the treasury ~0.0018 ZEC + 0.0001 fee. 10K rides/mo ≈ ~19
-  ZEC/mo treasury burn at current parameters. Emission knobs are env vars —
-  rates drop without redeploying.
+- Payout cost is **pegged to carbon value: $0.006/mile** ($0.003728/km) — the
+  worth of ~1 lb of avoided CO2. In ZEC that's ~793 zat/km at ZEC ≈ $470;
+  re-peg as ZEC moves (`deploy/repeg_carbon_rate.sh`). The 0.005 ZEC/ride cap
+  is now just a safety ceiling (≈630 km to reach it).
+- A 9 km ride (~5.6 mi) costs the treasury **~$0.034** (~0.00007 ZEC at $470) +
+  negligible batched fee. 10K rides/mo ≈ **~$335/mo** (~0.7 ZEC) — about 25×
+  cheaper than the old flat rate. Cost is now anchored in USD (carbon), so it's
+  stable in dollars and shrinks in ZEC as the price rises.
 - Treasury risk: denominated in ZEC, so reward liability is volatile. Mitigate
   with low caps (already built), dynamic ZAT_PER_KM repricing, and sponsor
   pools. Do not promise dollar-stable earnings.

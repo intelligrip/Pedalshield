@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     marginTop: theme.space.sm,
     marginBottom: theme.space.lg,
   },
-  scroll: { flexGrow: 0 },
+  scroll: { flex: 1 },
   scrollContent: { paddingBottom: theme.space.lg },
   section: { marginBottom: theme.space.md },
   sectionHeader: {

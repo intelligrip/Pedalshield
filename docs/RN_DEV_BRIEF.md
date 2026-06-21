@@ -9,7 +9,7 @@ _Scope: ~10–25 focused hours to take the iOS app from "builds + installs" to "
 - **Builds + ships:** `eas build --platform ios --profile production` produces an App-Store-accepted `.ipa` (uploaded via Transporter). Apple org account in place.
 
 ## P0 — make "earn shielded ZEC" real — DONE (non-custodial)
-**Resolved.** Riders now receive real shielded ZEC. Instead of building a custodial in-app wallet, Pedalshield is **non-custodial: bring your own wallet.** The rider connects a Zcash wallet they already control (Zashi/Zodl) by entering its Unified Address; verified rides pay real ZEC straight to it.
+**Resolved.** Riders now receive real shielded ZEC. Instead of building a custodial in-app wallet, Pedalshield is **non-custodial: bring your own wallet.** The rider connects a Zcash wallet they already control (Zodl) by entering its Unified Address; verified rides pay real ZEC straight to it.
 - `mobile/src/wallet/connectedWallet.ts` — validates the UA (network/charset/length/mock guard), persists it across restarts (`@react-native-async-storage/async-storage`, in-memory fallback), pub/sub for the UI. Unit-tested (`src/wallet/__tests__/connectedWallet.test.ts`).
 - `mobile/src/components/ConnectWalletCard.tsx` — connect / change / disconnect UI; replaces the old `u1mock…` vault card on the Home screen.
 - `config.getRecipientUA()/setRecipientUA()` now delegate here; the stored UA is submitted as the `recipient_ua` on every `POST /claim`.
@@ -43,7 +43,7 @@ A native in-app wallet (`mobile/src/wallet/nativeWallet.ts`, RN bridge to `Zcash
 - New app icon already in `mobile/assets/icon.png`.
 
 ## Honest-claims rules (must hold in all copy/UX)
-Payouts are small (~0.0002 ZEC/km, capped). Privacy is the product, not yield. ZK route proofs are roadmap, not live. Anti-cheat is layered, not perfect. No token.
+Payouts are small and capped — pegged to carbon value (~$0.006/mile, the worth of ~1 lb of avoided CO2). Privacy is the product, not yield. ZK route proofs are roadmap, not live. Anti-cheat is layered, not perfect. No token.
 
 ## Build / test
 - `cd mobile && eas build --platform ios --profile production` → `.ipa`; upload via Transporter (or `eas submit`).

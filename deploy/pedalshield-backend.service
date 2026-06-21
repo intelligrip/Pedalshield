@@ -14,7 +14,11 @@ RestartSec=5
 Environment=PEDALSHIELD_PORT=8787
 Environment=PEDALSHIELD_LIGHTWALLETD=https://zec.rocks:443
 Environment=PEDALSHIELD_BIRTHDAY=3361149
-Environment=PEDALSHIELD_ZAT_PER_KM=20000
+# Reward is pegged to CARBON VALUE: 1 lb CO2 avoided per mile biked-not-driven
+# × $0.006/lb = $0.006/mile. In ZEC terms that depends on the ZEC price, so this
+# value is RE-PEGGED by deploy/repeg_carbon_rate.sh. Value below = $0.006/mile
+# at ZEC ≈ $470 (1 mile = 1.609344 km → 793 zat/km). Re-run the script when ZEC moves.
+Environment=PEDALSHIELD_ZAT_PER_KM=793
 Environment=PEDALSHIELD_MAX_PAYOUT_ZAT=500000
 Environment=PEDALSHIELD_AUTO_PAYOUT=1
 Environment=PEDALSHIELD_DB=/home/pedal/Pedalshield/zcash-service/pedalshield.sqlite

@@ -71,7 +71,7 @@ Move-to-earn fitness apps either farm your data (Strava) or collapse under
 tokenomics ponzis (StepN). Pedalshield is neither. Your routes are never
 uploaded — not encrypted-and-uploaded, **never uploaded**. Rewards are real
 ZEC from a finite treasury — we never mint anything, and payouts are small
-and capped by design (0.0002 ZEC/km, 0.005 ZEC/ride cap): privacy is the
+and capped by design (pegged to carbon value: ~$0.006/mile for ~1 lb avoided CO2; 0.005 ZEC/ride cap): privacy is the
 product, not yield.
 
 ## How it works

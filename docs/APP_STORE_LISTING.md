@@ -49,7 +49,7 @@ Ride private. Earn shielded.
 Most fitness apps are surveillance devices with a leaderboard — they trade you rewards for your location history. Heatmaps from these apps have exposed military bases, stalking victims, and people's home addresses. Pedalshield is the opposite. You get paid for riding, and your route never leaves your phone.
 
 HOW IT WORKS
-1. Connect your own Zcash wallet. Paste the Unified Address from a wallet you already control (like Zashi). Pedalshield is non-custodial — we never hold your keys or your funds.
+1. Connect your own Zcash wallet. Paste the Unified Address from a wallet you already control (like Zodl). Pedalshield is non-custodial — we never hold your keys or your funds.
 2. Ride. Your GPS and motion sensors track the ride entirely on your device. An on-device anti-cheat engine scores it. Only an anonymous distance claim is ever sent — never your route.
 3. Earn. An autonomous treasury sends real shielded ZEC straight to your wallet. No operator approves it. No one watches it.
 
@@ -63,7 +63,7 @@ You bring a wallet you own. Rewards land in your address on the Zcash network. W
 
 HONEST BY DESIGN
 We name our limits out loud:
-- Payouts are small and capped (about 0.0002 ZEC per kilometer). This is privacy you can feel good about — not a money-printer.
+- Payouts are small and capped — pegged to carbon value (about $0.006 per mile, the worth of ~1 lb of avoided CO2). This is privacy you can feel good about — not a money-printer.
 - Anti-cheat is layered, not perfect. We catch cars, walks, and spoofs with defense-in-depth, and we publish what it doesn't catch.
 - Zero-knowledge route proofs are on the roadmap; today's privacy comes from simply never transmitting your route.
 

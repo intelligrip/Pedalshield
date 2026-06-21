@@ -32,17 +32,20 @@ rides:
 3. **Treasury wall (the expensive one).** ZIP-317 charges a **5,000-zat
    marginal fee per logical action (0.00005 ZEC), minimum 2 actions.** Each
    rider you pay is one Orchard output = one action = **≥5,000 zats of fee,
-   paid by the treasury.** Compare to the payout schedule (0.0002 ZEC/km):
+   paid by the treasury.** Compare to the **carbon-pegged** payout (~793 zat/km
+   = 0.0000079 ZEC/km at ZEC ≈ $470 — i.e. $0.006/mile):
 
-   | Ride | Payout | On-chain fee | Fee as % of payout |
+   | Ride | Payout (carbon) | On-chain fee | Fee as % of payout |
    |---|---|---|---|
-   | 0.25 km | 0.00005 ZEC | 0.00005 ZEC | **100%** (fee = payout) |
-   | 1 km | 0.0002 ZEC | 0.00005 ZEC | **25%** |
-   | 5 km | 0.001 ZEC | 0.00005 ZEC | 5% |
+   | 1 km | 0.0000079 ZEC | 0.00005 ZEC | **~630%** (fee ≫ payout) |
+   | 5 km | 0.0000397 ZEC | 0.00005 ZEC | **~126%** |
+   | 9 km | 0.0000714 ZEC | 0.00005 ZEC | **~70%** |
 
-   Paying every short ride individually, the treasury spends a quarter to all
-   of every reward shipping coins. At a million small rides/day that is the
-   runway, gone.
+   At the carbon rate the per-ride reward is **smaller than the on-chain fee for
+   any normal ride.** Paying every ride individually would cost the treasury
+   more in fees than it pays riders — so per-ride on-chain payout isn't just
+   wasteful, it's impossible. Accrual + batched settlement (below) is
+   **mandatory, not an optimization.**
 
 **Key fact that drives the whole design:** batching N riders into one tx
 **does not** reduce the per-rider fee. An Orchard tx paying N recipients needs
@@ -81,9 +84,13 @@ floor `F`**, or on explicit rider-initiated withdraw. Pick `F` so the fixed
 | 0.005 ZEC (current per-ride cap) | 1% |
 | **0.01 ZEC** | **0.5%** ← recommended default |
 
-At `F = 0.01 ZEC` and 0.0002 ZEC/km, a rider accrues ~50 km before settling —
-roughly 10 days at 5 km/day. The treasury's fee bleed drops from up to 100%
-to **≤0.5%.** That is the runway fix.
+The fee *percentage* depends only on `F` (5,000 zats ÷ F), **not** on the per-km
+rate — so the runway fix holds at the carbon rate. What the carbon rate changes
+is **cadence**: at 0.0000079 ZEC/km, `F = 0.01 ZEC` takes ~1,260 km to reach
+(too long), so pick a smaller floor. **Recommended at the carbon rate:
+`F = 0.001 ZEC`** → a rider settles roughly every ~126 km (~25 days at 5 km/day)
+at ~5% fee overhead. Raise F toward 0.01 ZEC (0.5% overhead) only for very
+active riders. Either way the bleed drops from >100% to single digits.
 
 ### 3. Batched settlement tx + note reservation (fixes throughput & contention)
 
@@ -108,14 +115,17 @@ headroom. The throughput wall is gone.
 
 ## Numbers at a million rides/day
 
-Assume 1M rides/day, avg 5 km, schedule 0.0002 ZEC/km.
+Assume 1M rides/day, avg 5 km, carbon rate 0.0000079 ZEC/km (≈$0.006/mile at
+ZEC $470) with floor `F = 0.001 ZEC`. Total rewards ≈ **40 ZEC/day** (~$18.6K)
+— vs ~1,000 ZEC/day under the old flat rate. The batching structure is
+unchanged; only the magnitudes shrink ~25×.
 
-| Metric | Per-ride spend (today) | Accrual + threshold batch |
+| Metric | Per-ride spend (naive) | Accrual + threshold batch (F=0.001) |
 |---|---|---|
-| On-chain txs/day | up to 1,000,000 | ~1,000 |
-| Logical actions/day | ~1,000,000 | ~100,000 |
-| Fee paid by treasury/day | ~50 ZEC | ~5 ZEC |
-| Fee as % of rewards | up to ~25–100% | **~0.5%** |
+| On-chain txs/day | up to 1,000,000 | ~400 |
+| Logical actions/day | ~1,000,000 | ~40,000 |
+| Fee paid by treasury/day | ~50 ZEC | ~2 ZEC |
+| Fee as % of rewards (~40 ZEC/day) | **>100%** (fee > payout) | **~5%** |
 | Hits block-rate ceiling? | yes, by ~870× | no |
 
 (Reward outflow itself is ~1,000 ZEC/day in this scenario; the win is killing

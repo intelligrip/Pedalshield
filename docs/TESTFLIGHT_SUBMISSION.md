@@ -16,11 +16,11 @@ Pedalshield pays you private Zcash (ZEC) for real bike rides — and your route 
 Most fitness apps are surveillance devices with a leaderboard: they trade you rewards for your location history. Pedalshield is the opposite. Your GPS route is verified entirely on your device and is never uploaded. Only an anonymous distance claim is sent — enforced in code, not just a privacy policy.
 
 How it works:
-1. Connect your own Zcash wallet (Zashi, Zodl, or any wallet) by pasting its Unified Address. Pedalshield is non-custodial — we never hold your keys or your funds.
+1. Connect your own Zcash wallet (Zodl, or any wallet) by pasting its Unified Address. Pedalshield is non-custodial — we never hold your keys or your funds.
 2. Ride. GPS and motion sensors track you locally; an on-device anti-cheat engine scores the ride.
 3. Earn. An autonomous treasury sends shielded ZEC straight to your wallet — no operator approves it, no one watches it.
 
-Honest by design: payouts are small and capped (~0.0002 ZEC/km). Privacy is the product, not yield. This is a beta — expect rough edges, and tell us about them.
+Honest by design: payouts are pegged to carbon value (~$0.006/mile, ~1 lb avoided CO2), small and capped. Privacy is the product, not yield. This is a beta — expect rough edges, and tell us about them.
 
 Open source (MIT). Built for the ZecHub Hackathon 2026.
 ```
@@ -35,7 +35,7 @@ Thanks for testing Pedalshield! Please focus on:
 
 CONNECT YOUR WALLET
 - On the Home tab, tap "Connect your Zcash wallet" and paste your wallet's Unified Address (starts with u1). Confirm it saves and shows "Connected."
-- Don't have a Zcash wallet? Install the free Zashi app, copy your receive address, and paste it.
+- Don't have a Zcash wallet? Install the free Zodl app, copy your receive address, and paste it.
 - Force-quit and reopen the app — your wallet should still be connected.
 
 RIDE + EARN
@@ -69,7 +69,7 @@ HOW TO TEST THE CORE FLOW (no account or sign-up required)
 
 COMPLIANCE NOTES (Guideline 3.1.5(ii))
 - The app facilitates ZEC transmission only on Zcash mainnet, to an address the user controls. There is no in-app currency purchase or sale, no exchange, and no fiat.
-- Rewards are funded by us, are small and capped (~0.0002 ZEC per km), and are not a payment for downloads, reviews, or social actions.
+- Rewards are funded by us, are small and capped, pegged to carbon value (~$0.006/mile = ~1 lb avoided CO2), and are not a payment for downloads, reviews, or social actions.
 - We operate under an Apple organization (company) account, as required for crypto-related apps.
 - No login, no personal data collection. GPS route data is processed only on-device and is never transmitted (verifiable in the open-source repo).
 

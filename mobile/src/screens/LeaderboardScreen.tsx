@@ -194,7 +194,7 @@ function HandleEditor({ onSaved }: { onSaved: () => void }) {
       <Card>
         <Text style={styles.cardLabel}>YOUR HANDLE</Text>
         <Text style={styles.help}>
-          Set your Zashi wallet on the Ride tab first, then come back to pick
+          Set your Zodl wallet on the Ride tab first, then come back to pick
           a display name for the board.
         </Text>
       </Card>

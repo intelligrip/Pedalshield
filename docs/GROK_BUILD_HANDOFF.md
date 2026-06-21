@@ -118,7 +118,7 @@ bundler strips types, so they don't block the build. Don't be alarmed by them.
   `zcash_client_sqlite` — the spend path is hand-rolled on purpose.
 - Backend env knobs (no rebuild): `PEDALSHIELD_LIGHTWALLETD` (use
   `https://zec.rocks:443`, not the flaky default), `PEDALSHIELD_BIRTHDAY`
-  (3361149), `PEDALSHIELD_ZAT_PER_KM` (20000 = 0.0002 ZEC/km ≈ 0.00032 ZEC/mile),
+  (3361149), `PEDALSHIELD_ZAT_PER_KM` (793 = carbon-pegged $0.006/mile at ZEC ~$470; re-peg via deploy/repeg_carbon_rate.sh),
   `PEDALSHIELD_MAX_PAYOUT_ZAT` (500000), `PEDALSHIELD_AUTO_PAYOUT` (on),
   `PEDALSHIELD_ACCRUAL`, `TREASURY_SPENDING_KEY_FILE`, `PEDALSHIELD_TREASURY_UA`,
   `PEDALSHIELD_DB`, `PEDALSHIELD_PORT` (8787).

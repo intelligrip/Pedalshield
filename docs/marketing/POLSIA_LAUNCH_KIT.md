@@ -13,7 +13,7 @@ _Hold the launch posts until the demo video exists (per TIMELINE.md); landing pa
 **Status:** Working mainnet prototype (real autonomous Orchard payouts proven, txids on-chain). ZecHub Hackathon 2026 submission, Games track, deadline July 15. Demo video lands ~June 22–28.
 **Audience:** privacy-conscious cyclists, Zcash/privacy-tech community, move-to-earn refugees burned by STEPN-style token games, self-quantifiers uneasy about Strava heatmaps.
 **Positioning:** "Better than Strava — because Strava sells the map of your life." Strava heatmap doxxing incidents are the hook. Pedalshield is the counterexample: rewards without surveillance.
-**Honest-claims rule (hard):** Never claim ZK route proofs are live (roadmap v0.5), never claim FROST signs mainnet payouts yet (Ed25519 ceremony works; RedPallas swap is roadmapped), never imply big earnings — payouts are small (~0.0002 ZEC/km, capped). Privacy is the product, not yield.
+**Honest-claims rule (hard):** Never claim ZK route proofs are live (roadmap v0.5), never claim FROST signs mainnet payouts yet (Ed25519 ceremony works; RedPallas swap is roadmapped), never imply big earnings — payouts are pegged to carbon value (~$0.006/mile = ~1 lb avoided CO2), small and capped. Privacy is the product, not yield.
 **CTAs:** GitHub repo → github.com/intelligrip/Pedalshield · demo video (when live) · ZecHub hackathon entry.
 
 ### Tasks for Polsia

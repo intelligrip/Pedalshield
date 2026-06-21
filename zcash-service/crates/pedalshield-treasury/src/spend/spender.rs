@@ -73,6 +73,12 @@ pub async fn pay(
     let fvk = FullViewingKey::from(sk);
     let ivk: IncomingViewingKey = fvk.to_ivk(Scope::External);
     let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
+    // Scan BOTH external and internal (change) scopes, so change notes from
+    // prior payouts are rediscovered and stay spendable.
+    let scan_ivks = [
+        prepared_ivk,
+        PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::Internal)),
+    ];
     let ovk_ext: OutgoingViewingKey = fvk.to_ovk(Scope::External);
     let ovk_int: OutgoingViewingKey = fvk.to_ovk(Scope::Internal);
     let sak = SpendAuthorizingKey::from(sk);
@@ -121,7 +127,7 @@ pub async fn pay(
     let mut progress = ScanProgress::default();
     while let Some(block) = stream.next().await {
         let block = block.map_err(|e| format!("stream error: {e}"))?;
-        process_block(&block, &prepared_ivk, &mut tree, &mut found, &mut progress)?;
+        process_block(&block, &scan_ivks, &mut tree, &mut found, &mut progress)?;
     }
 
     // --- select the largest UNSPENT note ---

@@ -2,7 +2,7 @@
  * Connected (bring-your-own) Zcash wallet.
  *
  * Pedalshield is NON-CUSTODIAL: the rider connects a wallet they already
- * control (Zashi, Zodl, Ywallet, ...) by entering its Unified Address.
+ * control (Zodl, Ywallet, ...) by entering its Unified Address.
  * Verified rides pay real shielded ZEC straight to that address — the app
  * never holds the rider's keys and never custodies funds.
  *
