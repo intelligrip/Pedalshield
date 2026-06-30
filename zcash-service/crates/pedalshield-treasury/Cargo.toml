@@ -44,6 +44,10 @@ tiny-bip39 = "1"
 
 rand   = "0.8"
 sha2   = "0.10"
+# HMAC-SHA256 for verifying the price oracle's signed attestations
+# (deploy/oracle.sh signs with `openssl dgst -sha256 -hmac`). Standard,
+# audited construction — we do not hand-roll the MAC.
+hmac   = "0.12"
 serde  = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"

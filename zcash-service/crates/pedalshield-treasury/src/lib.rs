@@ -20,7 +20,9 @@ pub mod anomaly;
 pub mod error;
 pub mod frost_coordinator;
 pub mod ledger;
+pub mod oracle;
 pub mod orchard_bridge;
+pub mod pool;
 pub mod spend;
 pub mod types;
 
@@ -38,6 +40,10 @@ pub use frost_coordinator::{
     CeremonyOutput, FrostCoordinator, PendingCeremony, Signer, VerifyingKey,
 };
 pub use ledger::{ClaimLedger, InMemoryLedger};
+pub use oracle::{carbon_miles_funded, carbon_zat_per_km, value_zat_usd, PriceAttestation};
+pub use pool::{
+    fee_buffer_zat, pool_net, record_inflow, record_outflow, runway_days, PoolStats,
+};
 pub use orchard_bridge::{
     finalize_payout, plan_payout, PayoutPlan, TreasuryNote, Txid,
 };
