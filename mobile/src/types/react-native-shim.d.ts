@@ -226,6 +226,40 @@ declare module 'expo-location' {
   ): Promise<LocationObject>;
 }
 
+declare module 'react-native-maps' {
+  import type { ComponentType, ReactNode } from 'react';
+  export interface Region {
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  }
+  export interface MapViewProps {
+    style?: unknown;
+    initialRegion?: Region;
+    region?: Region;
+    showsUserLocation?: boolean;
+    showsMyLocationButton?: boolean;
+    provider?: string;
+    children?: ReactNode;
+    [k: string]: unknown;
+  }
+  const MapView: ComponentType<MapViewProps>;
+  export default MapView;
+  export const Marker: ComponentType<{
+    coordinate: { latitude: number; longitude: number };
+    title?: string;
+    description?: string;
+    pinColor?: string;
+    onPress?: () => void;
+    onCalloutPress?: () => void;
+    children?: ReactNode;
+  }>;
+  export const Callout: ComponentType<{ children?: ReactNode; onPress?: () => void }>;
+  export const PROVIDER_GOOGLE: string;
+  export const PROVIDER_DEFAULT: string;
+}
+
 declare module 'expo-sensors' {
   export const Accelerometer: {
     setUpdateInterval(ms: number): void;

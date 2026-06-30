@@ -9,7 +9,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "test": "node --test src/verification/__tests__/*.test.ts src/wallet/__tests__/*.test.ts src/ride/__tests__/*.test.ts",
+    "test": "node --test src/verification/__tests__/*.test.ts src/wallet/__tests__/*.test.ts src/ride/__tests__/*.test.ts src/prefs/__tests__/*.test.ts src/coop/__tests__/*.test.ts",
+    "test:private": "node --test src/verification-private/__tests__/*.test.ts",
+    "test:all": "npm test && npm run test:private",
     "typecheck": "tsc --noEmit",
     "postinstall": "patch-package"
   },
@@ -30,6 +32,7 @@
     "react": "19.2.3",
     "react-native": "0.85.3",
     "react-native-gesture-handler": "~2.31.1",
+    "react-native-maps": "1.20.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4"

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Button } from '../components/Button.tsx';
 import { Card } from '../components/Card.tsx';
+import { MerchantMap, mapAvailable } from '../components/MerchantMap.tsx';
 import { theme } from '../app/theme.ts';
 import {
   directionsUrl,
@@ -18,6 +19,8 @@ import {
   type SpendMerchant,
 } from '../spend/geo.ts';
 import { fetchNearbyMerchants, getDeviceLocation } from '../spend/overpass.ts';
+
+type View2 = 'list' | 'map';
 
 type Phase =
   | { k: 'locating' }
@@ -36,6 +39,11 @@ const WIDE = 15000;
  */
 export function SpendNearbyContent() {
   const [phase, setPhase] = useState<Phase>({ k: 'locating' });
+  const [view, setView] = useState<View2>('list');
+  const canMap = mapAvailable();
+
+  const openDirections = (m: SpendMerchant) =>
+    Linking.openURL(directionsUrl(m, Platform.OS)).catch(() => {});
 
   const search = useCallback(async (coords: LatLng, radiusM: number) => {
     setPhase({ k: 'loading', coords, radiusM });
@@ -140,7 +148,40 @@ export function SpendNearbyContent() {
         </Card>
       )}
 
+      {phase.k === 'ready' && phase.items.length > 0 && canMap && (
+        <View style={styles.viewToggle}>
+          <Pressable
+            onPress={() => setView('list')}
+            style={[styles.vt, view === 'list' && styles.vtActive]}
+          >
+            <Text style={[styles.vtLabel, view === 'list' && styles.vtLabelActive]}>
+              List
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setView('map')}
+            style={[styles.vt, view === 'map' && styles.vtActive]}
+          >
+            <Text style={[styles.vtLabel, view === 'map' && styles.vtLabelActive]}>
+              Map
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
       {phase.k === 'ready' &&
+        phase.items.length > 0 &&
+        canMap &&
+        view === 'map' && (
+          <MerchantMap
+            center={phase.coords}
+            merchants={phase.items}
+            onSelect={openDirections}
+          />
+        )}
+
+      {phase.k === 'ready' &&
+        (!canMap || view === 'list') &&
         phase.items.map((m) => <MerchantRow key={m.id} m={m} />)}
 
       {phase.k === 'ready' && phase.items.length > 0 && (
@@ -206,6 +247,22 @@ const styles = StyleSheet.create({
     letterSpacing: theme.font.h1.letterSpacing,
   },
   subtitle: { color: theme.color.textDim, fontSize: 14, lineHeight: 20 },
+  viewToggle: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    backgroundColor: theme.color.bgElev,
+    borderRadius: theme.radius.pill,
+    padding: 3,
+    gap: 3,
+  },
+  vt: {
+    paddingVertical: 6,
+    paddingHorizontal: theme.space.lg,
+    borderRadius: theme.radius.pill,
+  },
+  vtActive: { backgroundColor: theme.color.accent },
+  vtLabel: { color: theme.color.textDim, fontSize: 13, fontWeight: '700' },
+  vtLabelActive: { color: '#0A0E1A' },
   centered: { alignItems: 'center', paddingVertical: theme.space.xxl, gap: theme.space.md },
   dim: { color: theme.color.textDim, fontSize: 14 },
   cardTitle: { color: theme.color.text, fontSize: 17, fontWeight: '800' },
