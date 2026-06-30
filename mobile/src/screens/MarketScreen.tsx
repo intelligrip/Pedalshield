@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { MarketBuySheet } from '../components/MarketBuySheet.tsx';
+import { SpendNearbyContent } from './SpendNearbyScreen.tsx';
 import { theme } from '../app/theme.ts';
 import {
   CATALOG,
@@ -12,6 +13,7 @@ import {
 } from '../market/catalog.ts';
 
 type Filter = 'all' | MarketCategory;
+type Mode = 'inapp' | 'nearby';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -21,6 +23,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export function MarketScreen() {
+  const [mode, setMode] = useState<Mode>('inapp');
   const [filter, setFilter] = useState<Filter>('all');
   const [selected, setSelected] = useState<MarketItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -45,6 +48,29 @@ export function MarketScreen() {
         </Text>
       </View>
 
+      <View style={styles.segment}>
+        <Pressable
+          onPress={() => setMode('inapp')}
+          style={[styles.seg, mode === 'inapp' && styles.segActive]}
+        >
+          <Text style={[styles.segLabel, mode === 'inapp' && styles.segLabelActive]}>
+            In-app
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setMode('nearby')}
+          style={[styles.seg, mode === 'nearby' && styles.segActive]}
+        >
+          <Text style={[styles.segLabel, mode === 'nearby' && styles.segLabelActive]}>
+            Nearby
+          </Text>
+        </Pressable>
+      </View>
+
+      {mode === 'nearby' ? (
+        <SpendNearbyContent />
+      ) : (
+        <>
       <View style={styles.filters}>
         {FILTERS.map((f) => (
           <Pressable
@@ -83,6 +109,8 @@ export function MarketScreen() {
         Private-native goods (services, digital, vouchers) come first — no
         shipping address required.
       </Text>
+        </>
+      )}
 
       <MarketBuySheet
         item={selected}
@@ -102,6 +130,22 @@ const styles = StyleSheet.create({
     letterSpacing: theme.font.h1.letterSpacing,
   },
   subtitle: { color: theme.color.textDim, fontSize: 14, lineHeight: 20 },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: theme.color.bgElev,
+    borderRadius: theme.radius.pill,
+    padding: 4,
+    gap: 4,
+  },
+  seg: {
+    flex: 1,
+    paddingVertical: theme.space.sm,
+    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+  },
+  segActive: { backgroundColor: theme.color.accent },
+  segLabel: { color: theme.color.textDim, fontSize: 14, fontWeight: '700' },
+  segLabelActive: { color: '#0A0E1A' },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm },
   chip: {
     paddingVertical: theme.space.sm,

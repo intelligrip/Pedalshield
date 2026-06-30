@@ -97,9 +97,24 @@ declare module 'react-native' {
     style?: StyleProp<ViewStyle>;
   }>;
 
+  export const Switch: ComponentType<{
+    value?: boolean;
+    onValueChange?: (value: boolean) => void;
+    disabled?: boolean;
+    trackColor?: { false?: string; true?: string };
+    thumbColor?: string;
+    ios_backgroundColor?: string;
+    style?: StyleProp<ViewStyle>;
+  }>;
+
   export const Linking: {
     openURL(url: string): Promise<void>;
     canOpenURL(url: string): Promise<boolean>;
+  };
+
+  export const Platform: {
+    OS: 'ios' | 'android' | 'web' | 'windows' | 'macos';
+    select<T>(specifics: { [k: string]: T }): T;
   };
 
   export const Share: {
@@ -206,6 +221,9 @@ declare module 'expo-location' {
     opts: { accuracy?: number; timeInterval?: number; distanceInterval?: number },
     cb: (loc: LocationObject) => void,
   ): Promise<LocationSubscription>;
+  export function getCurrentPositionAsync(
+    opts?: { accuracy?: number },
+  ): Promise<LocationObject>;
 }
 
 declare module 'expo-sensors' {
