@@ -1,5 +1,4 @@
-
-dname: Deploy landing page to GitHub Pages
+name: Deploy landing page to GitHub Pages
 
 # Publishes the landing/ folder to GitHub Pages on every push to main.
 # One-time setup: GitHub repo → Settings → Pages → Build and deployment →
