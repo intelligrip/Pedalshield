@@ -16,6 +16,7 @@ import {
   packFilename,
   packUrl,
   REGION_PACKS,
+  US_STATE_PACKS,
   type RegionPack,
 } from '../regions.ts';
 import { buildOfflineStyle } from '../basemapStyle.ts';
@@ -53,6 +54,22 @@ describe('region packs', () => {
 
   it('returns null in the middle of the Pacific', () => {
     assert.equal(packCovering(0, -150), null);
+  });
+
+  it('covers all 50 US states', () => {
+    assert.equal(US_STATE_PACKS.length, 50);
+  });
+
+  it('metro beats state: SF ride gets sf-bay, not California', () => {
+    assert.equal(packCovering(37.7749, -122.4194)?.id, 'sf-bay');
+  });
+
+  it('state is the fallback outside metros', () => {
+    assert.equal(packCovering(39.7392, -104.9903)?.id, 'us-co'); // Denver
+    assert.equal(packCovering(30.2672, -97.7431)?.id, 'us-tx'); // Austin
+    assert.equal(packCovering(41.4993, -81.6944)?.id, 'us-oh'); // Cleveland
+    assert.equal(packCovering(21.3069, -157.8583)?.id, 'us-hi'); // Honolulu
+    assert.equal(packCovering(61.2181, -149.9003)?.id, 'us-ak'); // Anchorage
   });
 
   it('prefers the smallest covering pack', () => {

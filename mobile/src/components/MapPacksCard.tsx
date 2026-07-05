@@ -11,7 +11,11 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from './Card.tsx';
 import { theme } from '../app/theme.ts';
-import { REGION_PACKS, type RegionPack } from '../map/regions.ts';
+import {
+  METRO_PACKS,
+  US_STATE_PACKS,
+  type RegionPack,
+} from '../map/regions.ts';
 import {
   deletePack,
   downloadPack,
@@ -24,6 +28,7 @@ import { offlineMapAvailable } from './OfflineBaseMap.tsx';
 
 export function MapPacksCard() {
   const [, bump] = useState(0);
+  const [showStates, setShowStates] = useState(false);
   useEffect(() => {
     void hydratePackStore();
     return onPackChange(() => bump((n) => n + 1));
@@ -32,17 +37,41 @@ export function MapPacksCard() {
   // Nothing to manage if the build can't use packs at all.
   if (!offlineMapAvailable() || !packStoreAvailable()) return null;
 
+  // State packs the rider already has (or is downloading) surface above the
+  // fold; the remaining 50-state list stays behind a toggle.
+  const activeStates = US_STATE_PACKS.filter(
+    (p) => getPackState(p.id).status !== 'none',
+  );
+  const idleStates = US_STATE_PACKS.filter(
+    (p) => getPackState(p.id).status === 'none',
+  );
+
   return (
     <Card>
       <Text style={styles.sectionLabel}>OFFLINE MAPS</Text>
       <Text style={styles.note}>
-        Download your city once (on WiFi) and every map in Pedalshield renders
+        Download your area once (on WiFi) and every map in Pedalshield renders
         entirely on your phone — the ride map and Spend Nearby never contact a
-        tile server. Delete any time.
+        tile server. Metros are small; statewide packs cover everywhere else
+        but are bigger. Delete any time.
       </Text>
-      {REGION_PACKS.map((pack) => (
+      {METRO_PACKS.map((pack) => (
         <PackRow key={pack.id} pack={pack} />
       ))}
+      {activeStates.map((pack) => (
+        <PackRow key={pack.id} pack={pack} />
+      ))}
+      <Pressable
+        style={styles.toggle}
+        onPress={() => setShowStates((s) => !s)}
+      >
+        <Text style={styles.toggleText}>
+          {showStates ? 'Hide US states' : `Show all US states (${idleStates.length})`}
+        </Text>
+      </Pressable>
+      {showStates
+        ? idleStates.map((pack) => <PackRow key={pack.id} pack={pack} />)
+        : null}
     </Card>
   );
 }
@@ -126,4 +155,15 @@ const styles = StyleSheet.create({
   },
   actionText: { color: '#0A0E1A', fontSize: 13, fontWeight: '700' },
   actionTextGhost: { color: theme.color.textDim },
+  toggle: {
+    paddingVertical: theme.space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.color.border,
+    alignItems: 'center',
+  },
+  toggleText: {
+    color: theme.color.accentSoft,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });

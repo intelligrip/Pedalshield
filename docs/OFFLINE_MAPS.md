@@ -47,21 +47,25 @@ path. Tracked as roadmap below.
 ## Building region packs
 
 Packs are extracted from the public Protomaps daily planet build with the
-[`pmtiles` CLI](https://github.com/protomaps/go-pmtiles):
+[`pmtiles` CLI](https://github.com/protomaps/go-pmtiles). Don't write the
+commands by hand — generate them from the app's own registry so hosted
+packs can never drift from what the app expects:
 
 ```bash
-# bbox = west,south,east,north — must match REGION_PACKS in
-# mobile/src/map/regions.ts
-pmtiles extract https://build.protomaps.com/$(date +%Y%m%d).pmtiles \
-  sf-bay.pmtiles --bbox=-123.05,36.95,-121.20,38.35
-
-pmtiles extract https://build.protomaps.com/$(date +%Y%m%d).pmtiles \
-  nyc.pmtiles --bbox=-74.55,40.35,-73.35,41.15
-# ... one per entry in REGION_PACKS
+cd mobile
+node scripts/printPackCommands.ts > /tmp/build_packs.sh   # all 55 packs
+node scripts/printPackCommands.ts sf-bay us-ca            # or just some ids
+MAXZOOM=13 node scripts/printPackCommands.ts us-tx        # smaller states
+sh /tmp/build_packs.sh
 ```
 
-A metro at zooms 0–15 lands around 30–60 MB. Update `approxMB` in
-`regions.ts` with real sizes after extraction.
+Sizes: a metro at maxzoom 15 lands around 30–60 MB. **Statewide packs are
+much bigger** (California ≈ 1.5–2 GB at z15; the full 50-state set is
+roughly 15–25 GB). `MAXZOOM=13` cuts state packs ~10×; streets still render
+(MapLibre overzooms vector tiles) with somewhat simplified geometry. Update
+`approxMB` in `regions.ts` with real sizes after extraction. The app always
+offers the smallest covering pack, so metros stay the fast path and states
+are the rural fallback.
 
 ## Hosting
 
