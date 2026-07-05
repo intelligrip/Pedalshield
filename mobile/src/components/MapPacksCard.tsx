@@ -13,9 +13,49 @@ import { Card } from './Card.tsx';
 import { theme } from '../app/theme.ts';
 import {
   METRO_PACKS,
+  packCovering,
   US_STATE_PACKS,
   type RegionPack,
 } from '../map/regions.ts';
+
+/**
+ * On-device pack suggestion. Reads the phone's LAST KNOWN position (no new
+ * fix, no permission prompt — only works if ride tracking permission is
+ * already granted) and matches it against the registry locally. The
+ * coordinate never leaves this function, let alone the phone: suggesting
+ * "Bend, Oregon" is a bbox lookup in app code, not a server call.
+ */
+declare const require: (m: string) => any;
+let Location: any = null;
+try {
+  Location = require('expo-location');
+} catch {
+  Location = null;
+}
+
+function useSuggestedPack(): RegionPack | null {
+  const [suggested, setSuggested] = useState<RegionPack | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!Location?.getLastKnownPositionAsync) return;
+      try {
+        const perm = await Location.getForegroundPermissionsAsync();
+        if (!perm?.granted) return; // never prompt from a settings card
+        const pos = await Location.getLastKnownPositionAsync({});
+        if (!pos?.coords || !alive) return;
+        const pack = packCovering(pos.coords.latitude, pos.coords.longitude);
+        if (pack && alive) setSuggested(pack);
+      } catch {
+        /* no fix cached — fine, just no suggestion */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return suggested;
+}
 import {
   deletePack,
   downloadPack,
@@ -29,6 +69,7 @@ import { offlineMapAvailable } from './OfflineBaseMap.tsx';
 export function MapPacksCard() {
   const [, bump] = useState(0);
   const [showStates, setShowStates] = useState(false);
+  const suggested = useSuggestedPack();
   useEffect(() => {
     void hydratePackStore();
     return onPackChange(() => bump((n) => n + 1));
@@ -38,12 +79,14 @@ export function MapPacksCard() {
   if (!offlineMapAvailable() || !packStoreAvailable()) return null;
 
   // State packs the rider already has (or is downloading) surface above the
-  // fold; the remaining 50-state list stays behind a toggle.
+  // fold; the remaining 50-state list stays behind a toggle. The suggested
+  // pack is pinned on top and excluded from the lists below.
+  const metros = METRO_PACKS.filter((p) => p.id !== suggested?.id);
   const activeStates = US_STATE_PACKS.filter(
-    (p) => getPackState(p.id).status !== 'none',
+    (p) => p.id !== suggested?.id && getPackState(p.id).status !== 'none',
   );
   const idleStates = US_STATE_PACKS.filter(
-    (p) => getPackState(p.id).status === 'none',
+    (p) => p.id !== suggested?.id && getPackState(p.id).status === 'none',
   );
 
   return (
@@ -55,7 +98,15 @@ export function MapPacksCard() {
         tile server. Metros are small; statewide packs cover everywhere else
         but are bigger. Delete any time.
       </Text>
-      {METRO_PACKS.map((pack) => (
+      {suggested ? (
+        <View style={styles.suggestWrap}>
+          <Text style={styles.suggestLabel}>
+            SUGGESTED FOR YOUR AREA · DETECTED ON-DEVICE, NEVER UPLOADED
+          </Text>
+          <PackRow pack={suggested} />
+        </View>
+      ) : null}
+      {metros.map((pack) => (
         <PackRow key={pack.id} pack={pack} />
       ))}
       {activeStates.map((pack) => (
@@ -165,5 +216,20 @@ const styles = StyleSheet.create({
     color: theme.color.accentSoft,
     fontSize: 13,
     fontWeight: '600',
+  },
+  suggestWrap: {
+    backgroundColor: 'rgba(217, 70, 239, 0.07)',
+    borderColor: theme.color.accentSoft,
+    borderWidth: 1,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: theme.space.md,
+    marginBottom: theme.space.sm,
+  },
+  suggestLabel: {
+    color: theme.color.accentSoft,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    paddingTop: theme.space.md,
   },
 });

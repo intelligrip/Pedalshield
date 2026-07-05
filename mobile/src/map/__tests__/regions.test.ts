@@ -64,7 +64,12 @@ describe('region packs', () => {
     assert.equal(packCovering(37.7749, -122.4194)?.id, 'sf-bay');
   });
 
+  it('Bend rider gets the tiny Bend pack, not Oregon', () => {
+    assert.equal(packCovering(44.0582, -121.3153)?.id, 'bend');
+  });
+
   it('state is the fallback outside metros', () => {
+    assert.equal(packCovering(44.0521, -123.0868)?.id, 'us-or'); // Eugene
     assert.equal(packCovering(39.7392, -104.9903)?.id, 'us-co'); // Denver
     assert.equal(packCovering(30.2672, -97.7431)?.id, 'us-tx'); // Austin
     assert.equal(packCovering(41.4993, -81.6944)?.id, 'us-oh'); // Cleveland

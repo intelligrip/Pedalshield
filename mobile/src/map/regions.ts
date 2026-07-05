@@ -43,6 +43,12 @@ export function packFilename(pack: RegionPack): string {
  */
 export const METRO_PACKS: readonly RegionPack[] = [
   {
+    id: 'bend',
+    name: 'Bend, Oregon',
+    bbox: [-121.60, 43.80, -121.05, 44.30],
+    approxMB: 8,
+  },
+  {
     id: 'sf-bay',
     name: 'SF Bay Area',
     bbox: [-123.05, 36.95, -121.20, 38.35],
