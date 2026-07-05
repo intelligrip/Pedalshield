@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
+import { MapPacksCard } from '../components/MapPacksCard.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { theme } from '../app/theme.ts';
 import { getConnectedUA, onConnectedUAChange } from '../wallet/connectedWallet.ts';
+import {
+  getDataCoopPrefs,
+  isDataCoopOptedIn,
+  onDataCoopChange,
+  setDataCoopOptIn,
+} from '../prefs/dataCoop.ts';
 import { shortAddress } from '../lib/format.ts';
 
 const NEVER_COLLECTED = [
@@ -27,6 +34,20 @@ export function PrivacyDashboardScreen() {
   const [address, setAddress] = useState<string>(getConnectedUA());
   useEffect(() => onConnectedUAChange(setAddress), []);
   const connected = address.startsWith('u1');
+
+  // Data co-op: OFF by default. Reflects the persisted, versioned consent.
+  const [coopOptedIn, setCoopOptedIn] = useState<boolean>(isDataCoopOptedIn());
+  useEffect(
+    () => onDataCoopChange((p) => setCoopOptedIn(p.optedIn)),
+    [],
+  );
+  const consentedAt = getDataCoopPrefs().consentedAt;
+
+  const toggleCoop = (next: boolean) => {
+    // Optimistic: the store emits and re-syncs us via the subscription above.
+    setCoopOptedIn(next);
+    void setDataCoopOptIn(next);
+  };
 
   return (
     <ScreenContainer>
@@ -56,6 +77,38 @@ export function PrivacyDashboardScreen() {
         </Text>
       </Card>
 
+      <Card accent>
+        <View style={styles.coopHeader}>
+          <View style={styles.coopHeaderText}>
+            <Text style={styles.sectionLabel}>DATA CO-OP · OPT-IN</Text>
+            <Text style={styles.coopState}>
+              {coopOptedIn ? 'On — you’re contributing' : 'Off — fully private'}
+            </Text>
+          </View>
+          <Switch
+            value={coopOptedIn}
+            onValueChange={toggleCoop}
+            trackColor={{ false: theme.color.border, true: theme.color.accentSoft }}
+            thumbColor={coopOptedIn ? theme.color.accent : theme.color.textMuted}
+            ios_backgroundColor={theme.color.border}
+          />
+        </View>
+        <Text style={styles.note}>
+          Off by default. Turn this on to earn extra ZEC by contributing to the
+          rider data co-op. Even when it’s on, your raw route never leaves your
+          phone — only privacy-protected, aggregated signals do, and they can’t
+          be traced back to you. Turn it off any time; nothing further is shared.
+        </Text>
+        {coopOptedIn && consentedAt > 0 ? (
+          <Text style={styles.coopMeta}>
+            Opted in {new Date(consentedAt).toLocaleDateString()} · you own this
+            choice and can revoke it instantly.
+          </Text>
+        ) : null}
+      </Card>
+
+      <MapPacksCard />
+
       <Card>
         <Text style={styles.sectionLabel}>YOUR CONNECTED WALLET</Text>
         <Text style={styles.address}>
@@ -71,10 +124,13 @@ export function PrivacyDashboardScreen() {
       <Card>
         <Text style={styles.sectionLabel}>YOU CAN PROVE IT</Text>
         <Text style={styles.note}>
-          The on-device verification engine, claim payload definition, and
-          privacy assertion are open source under MIT. And because Pedalshield
-          is non-custodial, your ZEC lives in your own wallet — there's no
-          balance for us to control or freeze.
+          The claim payload definition and the privacy assertion are open source
+          under MIT — anyone can verify that no GPS, motion, barometer, or
+          pedometer data can leave your device. (The anti-cheat scoring engine
+          itself is proprietary, so it can't be gamed — but what it's allowed to
+          send is fully open.) And because Pedalshield is non-custodial, your ZEC
+          lives in your own wallet — there's no balance for us to control or
+          freeze.
         </Text>
       </Card>
     </ScreenContainer>
@@ -104,6 +160,20 @@ const styles = StyleSheet.create({
     fontWeight: theme.font.label.weight,
     letterSpacing: theme.font.label.letterSpacing,
     marginBottom: theme.space.md,
+  },
+  coopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.space.md,
+  },
+  coopHeaderText: { flex: 1 },
+  coopState: { color: theme.color.text, fontSize: 15, fontWeight: '700' },
+  coopMeta: {
+    color: theme.color.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: theme.space.sm,
   },
   row: { flexDirection: 'row', gap: theme.space.md, paddingVertical: 6 },
   icon: { fontSize: 18, fontWeight: '800', width: 18 },

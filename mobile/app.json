@@ -50,7 +50,8 @@
     },
     "owner": "sbnewman",
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      "@maplibre/maplibre-react-native"
     ],
     "runtimeVersion": {
       "policy": "appVersion"

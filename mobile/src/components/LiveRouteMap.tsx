@@ -1,17 +1,26 @@
 /**
- * LiveRouteMap - on-device polyline renderer.
+ * LiveRouteMap - on-device route renderer. Two modes, both zero-leak:
  *
- * Renders the rider's route as a magenta polyline on a coordinate grid.
- * No map tiles are fetched - the visualisation is purely a projection of
- * the on-device GPS buffer. That's the privacy story made visible: even
- * the map view doesn't phone home to a tile server.
+ * 1. Offline basemap (preferred): if the rider has downloaded the PMTiles
+ *    region pack covering this ride, the route draws over real streets
+ *    rendered 100% locally by MapLibre. No tile server, no glyph fetch,
+ *    no network at all during the ride.
+ * 2. Tileless fallback: the original SVG polyline on a coordinate grid,
+ *    projected straight from the on-device GPS buffer.
  *
- * Auto-fits the SVG viewBox to the route bounds with padding. A pulsing
- * halo + dot marks the current position.
+ * Either way the privacy story is visible in the UI: the map never phones
+ * home. Auto-fits to the route bounds; a halo + dot marks the position.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { OfflineBaseMap, offlineMapAvailable } from './OfflineBaseMap.tsx';
+import { packCovering } from '../map/regions.ts';
+import {
+  downloadedPackUri,
+  hydratePackStore,
+  onPackChange,
+} from '../map/packStore.ts';
 import Svg, {
   Circle,
   Defs,
@@ -35,12 +44,49 @@ interface Props {
   showWatermark?: boolean;
 }
 
+/**
+ * file:// URI of a downloaded pack covering the ride start, or null.
+ * Subscribes to the pack store so finishing a download upgrades the map
+ * live, mid-ride.
+ */
+function useCoveringPackUri(route: ReadonlyArray<Coord>): string | null {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    void hydratePackStore();
+    return onPackChange(() => bump((n) => n + 1));
+  }, []);
+  if (!offlineMapAvailable() || route.length === 0) return null;
+  const pack = packCovering(route[0].lat, route[0].lon);
+  return pack ? downloadedPackUri(pack.id) : null;
+}
+
 export function LiveRouteMap({
   route,
   width,
   height,
   showWatermark = true,
 }: Props) {
+  const packUri = useCoveringPackUri(route);
+
+  // Offline basemap mode: real streets, rendered entirely on-device.
+  if (packUri && route.length >= 2) {
+    return (
+      <View style={[styles.container, { width, height }]}>
+        <OfflineBaseMap
+          packUri={packUri}
+          fitCoords={route}
+          route={route}
+          interactive={false}
+        />
+        {showWatermark ? (
+          <View style={styles.watermark} pointerEvents="none">
+            <Text style={styles.watermarkText}>OFFLINE MAP · 0 BYTES SENT</Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
   // Empty state - placeholder grid only.
   if (route.length < 2) {
     return (
