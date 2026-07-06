@@ -122,6 +122,27 @@ export interface RideVerificationResult {
   computedAt: number;
 }
 
+export interface VerifyOptions {
+  /** Minimum integrity score to mark VERIFIED. */
+  verifyThreshold?: number;
+  /** Below this score the ride is REJECTED. Between = REVIEW. */
+  rejectThreshold?: number;
+  /** Override for testing; defaults to Date.now(). */
+  now?: () => number;
+}
+
+/**
+ * The pluggable verification engine contract.
+ *
+ * This interface is public (MIT). The *implementation* that satisfies it —
+ * the real scoring rubric, thresholds and feature extraction — is the moat
+ * and ships privately (see `engine.ts` resolver). The open repo provides a
+ * stub implementation so it still builds and tests against this contract.
+ */
+export interface VerificationEngine {
+  verifyRide(ride: RawRide, opts?: VerifyOptions): RideVerificationResult;
+}
+
 /**
  * Minimal payload that may leave the device.
  * NEVER add geo, motion, barometer, pedometer, or features fields here.

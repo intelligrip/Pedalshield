@@ -18,8 +18,8 @@ import type {
   RawRide,
   RideVerificationResult,
 } from '../verification/types.ts';
-import { verifyRide } from '../verification/rideVerifier.ts';
-import { haversineKm } from '../verification/sensorFusion.ts';
+import { verifyRide } from '../verification/engine.ts';
+import { haversineKm } from '../verification/geo.ts';
 
 export type RideSessionState =
   | 'idle'

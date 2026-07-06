@@ -7,6 +7,7 @@ import { theme } from './src/app/theme.ts';
 import { loadConnectedWallet } from './src/wallet/connectedWallet.ts';
 import { loadUnitPreference } from './src/lib/units.ts';
 import { loadRideHistory } from './src/ride/rideHistory.ts';
+import { loadDataCoopPrefs } from './src/prefs/dataCoop.ts';
 
 const navTheme = {
   dark: true,
@@ -31,6 +32,7 @@ export default function App() {
     // anything renders. Best-effort: failure just means "not connected yet".
     void loadUnitPreference(); // restore mi/km choice before screens render
     void loadRideHistory(); // restore banked rides (history + YTD)
+    void loadDataCoopPrefs(); // restore data co-op opt-in (defaults OFF)
     loadConnectedWallet()
       .catch((err) => {
         console.error('[boot] connected-wallet restore failed:', err);

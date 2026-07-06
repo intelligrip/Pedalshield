@@ -5,7 +5,7 @@
  */
 
 import type { RawRide } from '../verification/types.ts';
-import { haversineKm } from '../verification/sensorFusion.ts';
+import { haversineKm } from '../verification/geo.ts';
 
 export interface KmSplit {
   /** Split length in km (the unit length for full splits; <it for the final partial). */
