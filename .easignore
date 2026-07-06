@@ -1,0 +1,75 @@
+# EAS build upload filter.
+#
+# WHY THIS FILE EXISTS: without it, EAS falls back to .gitignore — which
+# excludes mobile/src/verification-private/ (the proprietary anti-cheat
+# engine). That shipped TestFlight build 9 with the open stub: every ride
+# stuck "in review", zero verified miles. This file mirrors .gitignore
+# EXCEPT it does NOT exclude the private engine, so real builds get the
+# real engine. Keep the two files in sync when adding entries.
+#
+# NOTE: this only affects what is uploaded to EAS build servers. The
+# public git repo still never contains the engine (.gitignore handles it).
+
+# Node
+node_modules/
+dist/
+build/
+.npm/
+*.tsbuildinfo
+
+# Expo / React Native
+.expo/
+.expo-shared/
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+
+# iOS
+ios/Pods/
+ios/build/
+*.xcuserdata/
+
+# Android
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+
+# Rust (not needed in a mobile build)
+target/
+zcash-service/
+
+# Env / secrets — NEVER upload these
+.env
+.env.local
+*.pem
+seed.txt
+treasury-shares/
+treasury-keys/
+treasury_seed.txt
+treasury_spending_key.bin
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs / coverage / temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+coverage/
+.~lock.*#
+*.tmp
+
+# Heavy repo content irrelevant to the app build
+docs/
+brand/
+clips/
+landing/
+deploy/
+*.pdf
+*.docx
