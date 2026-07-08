@@ -12,7 +12,14 @@ import { Button } from './Button.tsx';
 import { Card } from './Card.tsx';
 import { ShareCard } from './ShareCard.tsx';
 import { theme } from '../app/theme.ts';
-import { submitClaim, pollClaim, getAccrualBalance, AccrualBalance } from '../lib/api.ts';
+import {
+  submitClaim,
+  pollClaim,
+  getAccrualBalance,
+  getTreasuryInfo,
+  computePayoutZat,
+  AccrualBalance,
+} from '../lib/api.ts';
 import {
   BACKEND_URL,
   EXPLORER_TX_BASE,
@@ -111,8 +118,25 @@ export function PayoutCard({
   const [txid, setTxid] = useState<string | null>(null);
   const [stage, setStage] = useState(0);
   const [accruedBalance, setAccruedBalance] = useState<AccrualBalance | null>(null);
+  const [amountZat, setAmountZat] = useState<number | null>(null);
 
   const busy = phase === 'submitting' || phase === 'polling';
+
+  /**
+   * ZEC earned for this ride, computed with the treasury's LIVE rate via
+   * the same formula the backend uses to pay. Fetched at claim time so the
+   * number matches the actual on-chain amount. Best-effort — display only.
+   */
+  async function resolveAmount(): Promise<number | null> {
+    try {
+      const info = await getTreasuryInfo();
+      const zat = computePayoutZat(distanceM, info);
+      setAmountZat(zat);
+      return zat;
+    } catch {
+      return null; // backend unreachable for info — amount just not shown
+    }
+  }
 
   async function onWithdraw() {
     const recip = ua.trim();
@@ -129,7 +153,10 @@ export function PayoutCard({
       const data = JSON.parse(text) as { txid?: string; status?: string };
       if (data.txid) {
         setTxid(data.txid);
-        void updateRideTxid(rideId, data.txid);
+        // Withdraw settles the ACCRUED balance, so that's the ride's amount.
+        const paid = accruedBalance?.pending_zatoshi;
+        if (paid != null && paid > 0) setAmountZat(paid);
+        void updateRideTxid(rideId, data.txid, paid);
         setPhase('paid');
         setAccruedBalance(null);
         setMessage('');
@@ -158,6 +185,8 @@ export function PayoutCard({
     setStage(0);
     setPhase('submitting');
     setMessage('');
+    // Fire-and-forget: resolves the ZEC amount for display + history.
+    const amountPromise = resolveAmount();
     try {
       const ack = await submitClaim({
         claim_id: rideId,
@@ -183,7 +212,8 @@ export function PayoutCard({
       if (row.status === 'paid' && row.payout_txid) {
         setStage(3);
         setTxid(row.payout_txid);
-        void updateRideTxid(rideId, row.payout_txid);
+        const paid = (await amountPromise) ?? undefined;
+        void updateRideTxid(rideId, row.payout_txid, paid);
         setPhase('paid');
         setMessage('');
       } else if (row.status === 'rejected') {
@@ -206,6 +236,12 @@ export function PayoutCard({
       {phase === 'paid' && txid ? (
         <>
           <Pipeline active={3} done />
+          {amountZat != null && amountZat > 0 ? (
+            <Text style={styles.amountLine}>
+              +{(amountZat / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')}{' '}
+              ZEC
+            </Text>
+          ) : null}
           <Text style={styles.paidLine}>
             ✓ Shielded ZEC is on its way to your wallet. No operator
             touched it.
@@ -359,6 +395,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 22,
     marginBottom: theme.space.md,
+  },
+  amountLine: {
+    color: theme.color.success,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginBottom: theme.space.xs,
   },
   txidLabel: {
     color: theme.color.textDim,

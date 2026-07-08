@@ -28,6 +28,8 @@ export interface RideRecord {
   status: 'verified' | 'review' | 'rejected';
   /** Mainnet payout txid, once the reward settles (optional). */
   txid?: string;
+  /** ZEC earned for this ride, in zatoshi (optional; set when paid). */
+  amountZat?: number;
 }
 
 export interface HistorySummary {
@@ -181,11 +183,22 @@ export async function addRide(record: RideRecord): Promise<void> {
   await persist();
 }
 
-/** Attach a payout txid to a banked ride once it settles. */
-export async function updateRideTxid(id: string, txid: string): Promise<void> {
+/**
+ * Attach a payout txid (and, when known, the ZEC amount in zatoshi) to a
+ * banked ride once it settles.
+ */
+export async function updateRideTxid(
+  id: string,
+  txid: string,
+  amountZat?: number,
+): Promise<void> {
   const i = _records.findIndex((r) => r.id === id);
   if (i < 0) return;
-  _records[i] = { ..._records[i], txid };
+  _records[i] = {
+    ..._records[i],
+    txid,
+    ...(amountZat != null && amountZat > 0 ? { amountZat } : {}),
+  };
   emit();
   await persist();
 }

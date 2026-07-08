@@ -135,6 +135,22 @@ export async function getTreasuryInfo(): Promise<TreasuryInfo> {
   return fetchJson<TreasuryInfo>(`${BACKEND_URL}/treasury/info`);
 }
 
+/**
+ * Mirror of the backend's payout formula (`compute_payout` in backend.rs):
+ * distance × rate, integer-divided per km, clamped to the per-ride cap.
+ * Keep byte-for-byte in sync — the app shows this as "ZEC earned", so it
+ * must match what the treasury actually pays.
+ */
+export function computePayoutZat(
+  distanceMeters: number,
+  info: Pick<TreasuryInfo, 'zat_per_km' | 'max_payout_zat'>,
+): number {
+  const raw = Math.floor(
+    (Math.max(0, Math.round(distanceMeters)) * info.zat_per_km) / 1000,
+  );
+  return Math.min(raw, info.max_payout_zat);
+}
+
 export interface LeaderboardEntry {
   rank: number;
   handle: string | null;

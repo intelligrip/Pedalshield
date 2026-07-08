@@ -183,6 +183,9 @@ function RecentRides({ rides }: { rides: RideRecord[] }) {
             <Text style={styles.rideDist}>
               {formatDistance(r.distanceKm)} {distanceUnit()}
             </Text>
+            {r.amountZat != null && r.amountZat > 0 ? (
+              <Text style={styles.rideZec}>+{zecFromZat(r.amountZat)} ZEC</Text>
+            ) : null}
             {r.txid ? (
               <Pressable
                 onPress={() => Linking.openURL(`${EXPLORER_TX_BASE}${r.txid}`)}
@@ -290,6 +293,13 @@ const styles = StyleSheet.create({
     color: theme.color.accent,
     fontSize: 13,
     fontWeight: '700',
+  },
+  rideZec: {
+    color: theme.color.success,
+    fontSize: 13,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    marginRight: theme.space.sm,
   },
   ridePending: { color: theme.color.textMuted, fontSize: 13 },
   cardLabel: {
