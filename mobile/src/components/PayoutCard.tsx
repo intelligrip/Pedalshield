@@ -130,6 +130,14 @@ export function PayoutCard({
   async function resolveAmount(): Promise<number | null> {
     try {
       const info = await getTreasuryInfo();
+      // Older deployed backends don't return the rate fields — degrade to
+      // "no amount shown" rather than NaN.
+      if (
+        !Number.isFinite(info.zat_per_km) ||
+        !Number.isFinite(info.max_payout_zat)
+      ) {
+        return null;
+      }
       const zat = computePayoutZat(distanceM, info);
       setAmountZat(zat);
       return zat;
