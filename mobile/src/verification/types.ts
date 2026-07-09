@@ -84,6 +84,12 @@ export interface RideFeatures {
   elevationConsistency: number;
   /** median horizontal GPS accuracy in meters */
   gpsAccuracyMedian: number;
+  /**
+   * Fraction of raw GPS fixes discarded as isolated teleport spikes during
+   * track cleaning (0..1). A couple of glitches is GPS reality; a track
+   * riddled with them is synthetic.
+   */
+  gpsSpikeRatio: number;
   /** combined samples per second */
   sampleDensity: number;
   /** displacement / pathLength; 1 = perfectly straight */
@@ -100,7 +106,8 @@ export type FlagCode =
   | 'SPARSE_SAMPLES'
   | 'TOO_STRAIGHT'
   | 'NO_ATTESTATION'
-  | 'NO_MOTION_DATA';
+  | 'NO_MOTION_DATA'
+  | 'GPS_SYNTHETIC';
 
 export interface VerificationFlag {
   code: FlagCode;
