@@ -30,6 +30,14 @@ target/
 # Cargo.lock IS committed - this workspace has a binary
 # (`treasury_demo`), so we want reproducible builds for anyone cloning.
 
+# Proprietary anti-cheat / verification engine — NOT open source.
+# The real scoring rubric, thresholds, feature extraction, ML model and
+# fraud dataset live here. Present locally for the real build; excluded
+# from the public (MIT) repo. The public repo ships only the open interface
+# + a stub (see mobile/src/verification/), so forks build and test but do
+# not get the moat. See mobile/src/verification-private/README.md.
+mobile/src/verification-private/
+
 # Env / secrets
 .env
 .env.local
@@ -57,3 +65,9 @@ coverage/
 # LibreOffice / temp lock files (from PDF generation)
 .~lock.*#
 *.tmp
+
+# Raw demo footage — never in the public repo (final video goes to YouTube)
+clips/*.mov
+clips/*.mp4
+clips/*.MOV
+clips/*.MP4
