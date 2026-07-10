@@ -228,8 +228,15 @@ export function PayoutCard({
         setPhase('error');
         setMessage(row.rejection_reason ?? 'Payout rejected.');
       } else {
-        setPhase('polling');
-        setMessage('Still settling on chain — check back shortly.');
+        // Poll window expired but the payout may still land. CRITICAL: do
+        // NOT stay in 'polling' — that keeps the button disabled forever
+        // and the rider can never re-check (build 13 bug). 'error' phase
+        // re-enables the button; re-tapping claim is idempotent (backend
+        // treats it as a duplicate) and picks up the txid once paid.
+        setPhase('error');
+        setMessage(
+          'Still settling on chain — proving takes a few minutes. Tap claim again shortly to pick up your txid.',
+        );
       }
     } catch (e) {
       setPhase('error');

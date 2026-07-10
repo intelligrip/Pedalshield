@@ -84,7 +84,10 @@ export async function pollClaim(
     onUpdate?: (row: ClaimRow) => void;
   } = {},
 ): Promise<ClaimRow> {
-  const timeoutMs = opts.timeoutMs ?? 90_000;
+  // A real autonomous payout takes ~4 minutes on the droplet (scan-to-tip
+  // + Orchard proving). The window must comfortably exceed that, or the UI
+  // gives up right before the txid lands (build 13 demo bug).
+  const timeoutMs = opts.timeoutMs ?? 420_000;
   const intervalMs = opts.intervalMs ?? 3_000;
   const start = Date.now();
   let last: ClaimRow | null = null;
