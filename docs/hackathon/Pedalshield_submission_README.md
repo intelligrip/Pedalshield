@@ -9,6 +9,32 @@
 - **Demo video:** `<YOUTUBE/VIMEO URL — paste before opening the PR>`
 - **Live site:** https://pedalshield.app
 
+## Verify it yourself in 30 seconds (no build required)
+
+Don't take our word for it — these all work right now:
+
+1. **A real autonomous payout, on mainnet.** Open this transaction in any explorer:
+   `mainnet.zcashexplorer.app/transactions/c9d0864c10ed44e011e39716f0fc7cdb1fe913fe0d614129a07961b2578b37a5`
+   — a verified ride, paid automatically by the deployed backend, no human in the loop.
+2. **The backend is live.** `curl -s https://api.pedalshield.app/treasury/info` →
+   `"notes":"Autonomous Orchard payouts are live..."`, `"lightwalletd_connected":true`.
+3. **Privacy is enforced in code, not prose.** One command proves no GPS/route data can
+   enter the claim payload: `cd Pedalshield/mobile && node --test src/verification/__tests__/*.test.ts`
+
+## Try it on your own phone (iOS)
+
+It's in open beta — **install and ride it yourself: https://pedalshield.app** (TestFlight).
+Tap "Connect your Zcash wallet" → paste any Zcash Unified Address → take a short ride →
+watch it verify on-device and accrue a carbon-pegged reward. (Requires the free TestFlight app.)
+
+## Why it's a "Game"
+
+Pedalshield is a real-world game with on-chain stakes:
+- **Core loop:** ride → your phone scores it → *beat the anti-cheat* (the integrity-score reveal is the "did I pass?" beat) → earn.
+- **Progression:** streak multipliers reward showing up day after day.
+- **Competition:** a community leaderboard ranks riders by verified distance — compete on effort, never on your data.
+- **The reward is real, private money** (shielded ZEC), not points — the twist a Zcash games track is made for.
+
 ## How it uses Zcash mainnet
 
 Every verified ride triggers a **real shielded (Orchard) payout on Zcash mainnet** from an autonomous treasury — built on a hand-rolled, SDK-free Orchard spend pipeline (tree seeding from `GetTreeState`, scan-to-tip, note selection, v5 `TransactionBuilder`, ZIP-317 fees → prove → SIGHASH → sign → broadcast). Riders are **non-custodial**: they connect a Zcash Unified Address they already control, and the reward lands there as a shielded transaction. The stack is current with the June 2026 NU6.2 upgrade (consensus branch `0x5437f330`).
@@ -25,7 +51,7 @@ Pedalshield is a demand engine for Zcash. Every verified ride creates a real shi
 
 ## How the reward is set — carbon value
 
-You don't earn an arbitrary handout; you earn the **value of the carbon you keep out of the air.** Biking one mile instead of driving avoids ~1 lb of CO2, and that avoided pound is priced at ~$0.006 — so each verified mile pays ~$0.006 of shielded ZEC. The rate is pegged to that carbon value and re-pegged as the ZEC price moves (`deploy/repeg_carbon_rate.sh`). It reframes the reward from "crypto for tasks" to **verified, private climate impact, paid in private money.**
+You don't earn an arbitrary handout; you earn the **value of the carbon you keep out of the air.** Biking one mile instead of driving avoids ~1 lb of CO2, and that avoided pound is priced at the EPA's social cost of carbon (~$190/tonne => ~$0.086/lb) — so each verified mile pays ~$0.09 of shielded ZEC. The rate is pegged to that carbon value and re-pegged as the ZEC price moves (`deploy/repeg_carbon_rate.sh`). It reframes the reward from "crypto for tasks" to **verified, private climate impact, paid in private money.**
 
 ## What it does (the loop)
 
@@ -72,4 +98,4 @@ Full setup: `README.md` (60-second quick start), `zcash-service/README.md`, `dep
 
 ## Honest limits
 
-Payouts are small and capped — pegged to carbon value (~$0.006/mile, the worth of ~1 lb of avoided CO2). Privacy is the product, not yield. ZK route proofs are roadmap. Anti-cheat is layered, not perfect. No token.
+Payouts are modest and capped — pegged to the EPA social cost of carbon (~$190/tonne => ~$0.09/mile for ~1 lb of avoided CO2). Privacy is the product, not yield. ZK route proofs are roadmap. Anti-cheat is layered, not perfect. No token.

@@ -43,12 +43,15 @@ loop, on the NU6.2-current network rules.
 ```bash
 git clone https://github.com/intelligrip/Pedalshield.git pedalshield
 cd pedalshield/mobile
-node --test \
-  src/verification/__tests__/*.test.ts \
-  src/wallet/__tests__/*.test.ts \
-  src/ride/__tests__/*.test.ts
-# expected: tests 34 / pass 34 / fail 0 / ~400 ms
+npm test   # public test suite (runs against the open verification interface + stub)
+# expected: pass / fail 0
 ```
+
+> Note: the public repo ships the **open** verification interface (contract,
+> privacy-boundary claim builder, geo helpers) plus a stub. The proprietary
+> anti-cheat engine is **not** in this repo (see "Open vs. proprietary" below),
+> so `npm test` exercises the contract and privacy guarantees, not the secret
+> scoring rubric.
 
 Then verify the backend speaks current consensus:
 
@@ -71,7 +74,7 @@ Move-to-earn fitness apps either farm your data (Strava) or collapse under
 tokenomics ponzis (StepN). Pedalshield is neither. Your routes are never
 uploaded — not encrypted-and-uploaded, **never uploaded**. Rewards are real
 ZEC from a finite treasury — we never mint anything, and payouts are small
-and capped by design (pegged to carbon value: ~$0.006/mile for ~1 lb avoided CO2; 0.005 ZEC/ride cap): privacy is the
+and capped by design (pegged to the EPA social cost of carbon, ~$190/tonne: ~$0.09/mile for ~1 lb avoided CO2, per-ride cap): privacy is the
 product, not yield.
 
 ## How it works
@@ -99,8 +102,8 @@ fees. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 
 | What we claim | Where the receipt is |
 | --- | --- |
-| "Your route never leaves the phone" | `mobile/src/verification/__tests__/rideVerifier.test.ts` — JSON assertions reject `"lat"`, `"lon"`, `"accel"`, `"gyro"`, `"barometer"`, `"pedometer"`, `"pressure"` in `ClaimPayload`, and pin its exact minimal key set. |
-| "Real anti-cheat against car / walk / spoof" | Same file — 4 deterministic ride scenarios (legit bike, car, GPS spoof, walk) classified correctly. |
+| "Your route never leaves the phone" | `mobile/src/verification/__tests__/engine.public.test.ts` (open) — JSON assertions reject `"lat"`, `"lon"`, `"accel"`, `"gyro"`, `"barometer"`, `"pedometer"`, `"pressure"` in `ClaimPayload`, and pin its exact minimal key set. The payload builder (`verification/claim.ts`) is open so this is independently verifiable. |
+| "Real anti-cheat against car / walk / spoof" | Verified by the proprietary engine's own deterministic scenario suite (legit bike, car, GPS spoof, walk). That engine is **closed source** (see "Open vs. proprietary"), so the rubric isn't published — but the open stub proves the contract a fork would have to satisfy. |
 | "Autonomous mainnet payouts" | `zcash-service/.../src/spend/` (`tree.rs`, `scanner.rs`, `spender.rs`) + `bin/backend.rs` (`run_payout`), plus the mainnet txids above. |
 | "NU6.2-current" | `crates/pedalshield-treasury/Cargo.toml` pins (`zcash_protocol 0.9` et al.) + `treasury_ping`. |
 | "No manual operator" | `POST /claim` fires the payout in the background and ACKs `"paying"`; `/approve` exists only as a diagnostic retry. |
@@ -110,8 +113,9 @@ fees. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 
 | | Status |
 | --- | --- |
-| On-device ride verification engine (real GPS + sensors) | shipped + 15 tests |
-| Sensor fusion + integrity score + privacy seam | shipped |
+| On-device ride verification — open interface + stub (MIT) | shipped |
+| On-device anti-cheat engine (scoring rubric, thresholds, sensor fusion) | shipped — **proprietary, not in this repo** |
+| Privacy seam / claim payload (open, unit-test enforced) | shipped |
 | **Autonomous Orchard spend pipeline (mainnet-proven)** | **shipped** — tree seeding, scanning, note selection, v5 builder, broadcast |
 | Backend: claims API + autonomous payout + double-pay guard | shipped |
 | Zcash wallet interface (Mock + native bridge) | shipped + 10 tests |
@@ -127,6 +131,29 @@ We say what we can't do yet out loud. The anti-cheat is layered, not
 perfect; FROST does not yet authorize Orchard spends; ZK route proofs are
 the roadmap, not the present.
 
+## Open vs. proprietary
+
+Pedalshield is open-core. The client, the privacy contract, and everything you
+need to verify our privacy claims are **MIT open source**. The anti-cheat
+engine — the part that's actually hard and is the moat — is **proprietary and
+excluded from this repo**.
+
+| Open source (MIT) | Proprietary (not in this repo) |
+| --- | --- |
+| App, UI, ride state machine, wallet integration | Scoring rubric + all tuned thresholds |
+| `verification/` interface: `types.ts`, `claim.ts` (privacy seam), `geo.ts`, `engine.ts` resolver, `stub.ts` | Feature extraction / sensor fusion |
+| Privacy guarantees + tests | Fraud-detection model + labeled real-vs-fake ride dataset (future) |
+
+How the split works in code: the app calls `verifyRide` from
+`mobile/src/verification/engine.ts`, which loads the proprietary engine from
+`mobile/src/verification-private/` at runtime **if present**, and otherwise
+falls back to the open stub (which never marks a ride verified). The private
+directory is `.gitignore`d, so a clone or fork builds, runs, and passes the
+public tests against the contract — but does not receive the engine that
+decides whether a ride is real. Why open-core: privacy claims must be auditable
+to be trusted, but publishing the anti-cheat rulebook would just hand it to the
+people trying to fake rides. See `mobile/src/verification-private/README.md`.
+
 ## Repo tour
 
 ```
@@ -137,7 +164,10 @@ Pedalshield/
   deploy/                    - VPS deploy kit (systemd + Caddy)
 
   mobile/                    - React Native + Expo app (SDK 50, dev builds)
-    src/verification/        - on-device verifier (the privacy seam)
+    src/verification/        - OPEN interface: types, claim payload (privacy
+                               seam), geo helpers, engine resolver + stub (MIT)
+    src/verification-private/ - PROPRIETARY anti-cheat engine (git-ignored,
+                               NOT in the public repo; resolved at runtime)
     src/wallet/              - Wallet contract, Mock + native bridge
     src/ride/                - ride state machine + real GPS/motion source
     src/components/PayoutCard.tsx - claim -> poll -> real txid + explorer link

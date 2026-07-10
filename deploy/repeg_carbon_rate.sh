@@ -3,9 +3,13 @@
 # repeg_carbon_rate.sh — keep Pedalshield's reward pegged to CARBON VALUE.
 #
 # The reward is defined as the dollar value of the CO2 a rider keeps out of the
-# air by biking instead of driving:
+# air by biking instead of driving, priced at the EPA's social cost of
+# carbon (~$190 per tonne, EPA 2023 report => $190 / 2204.6 lb ≈ $0.086/lb):
 #
-#     1 lb CO2 avoided per mile  ×  $0.006 per lb  =  $0.006 per mile
+#     1 lb CO2 avoided per mile  ×  $0.086 per lb  =  ~$0.086 per mile
+#
+# (Previous peg was $0.006/lb — the low-end voluntary carbon-offset market
+# price. The EPA SCC is the better-grounded estimate of avoided damage.)
 #
 # That target is in USD, but the backend pays in ZEC (zatoshi per km), so the
 # correct zat/km depends on the live ZEC price. This script fetches the price,
@@ -23,7 +27,7 @@
 set -euo pipefail
 
 # --- The carbon peg (edit here if your inputs change) ---------------------
-USD_PER_LB_CO2=0.006     # value of 1 lb of CO2 not emitted
+USD_PER_LB_CO2=0.086     # EPA social cost of carbon (~$190/tonne CO2)
 LB_CO2_PER_MILE=1.0      # CO2 avoided per mile biked instead of driven
 KM_PER_MILE=1.609344
 

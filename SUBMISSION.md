@@ -85,7 +85,7 @@ We name our limits out loud — that's the point.
 
 ## Honest-claims rule (held throughout)
 
-Payouts are small and capped — pegged to carbon value (~$0.006/mile, the worth of ~1 lb of avoided CO2). Privacy is the product, not yield.
+Payouts are modest and capped — pegged to the EPA social cost of carbon (~$190/tonne => ~$0.09/mile for the ~1 lb of CO2 a biked mile avoids). Privacy is the product, not yield.
 ZK route proofs are roadmap, not live. Anti-cheat is layered, not perfect. No
 token. Every uncertain version and deferred chunk is named in the docs.
 
