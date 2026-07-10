@@ -303,7 +303,7 @@ export function PayoutCard({
         <>
           <Text style={styles.paidLine}>
             ✓ Ride accrued. No on-chain spend this ride — your earnings
-            accumulate off-chain (treasury fee ~0.5% at the 0.01 ZEC floor).
+            accumulate off-chain (network fee ~1% at the 0.01 ZEC floor, paid by the treasury).
           </Text>
           {accruedBalance ? (
             <View style={styles.balanceBox}>
