@@ -18,6 +18,8 @@ import {
   getAccrualBalance,
   getTreasuryInfo,
   computePayoutZat,
+  formatUsd,
+  payoutUsd,
   AccrualBalance,
 } from '../lib/api.ts';
 import {
@@ -119,6 +121,7 @@ export function PayoutCard({
   const [stage, setStage] = useState(0);
   const [accruedBalance, setAccruedBalance] = useState<AccrualBalance | null>(null);
   const [amountZat, setAmountZat] = useState<number | null>(null);
+  const [amountUsd, setAmountUsd] = useState<number | null>(null);
 
   const busy = phase === 'submitting' || phase === 'polling';
 
@@ -127,7 +130,7 @@ export function PayoutCard({
    * the same formula the backend uses to pay. Fetched at claim time so the
    * number matches the actual on-chain amount. Best-effort — display only.
    */
-  async function resolveAmount(): Promise<number | null> {
+  async function resolveAmount(): Promise<{ zat: number; usd: number | null } | null> {
     try {
       const info = await getTreasuryInfo();
       // Older deployed backends don't return the rate fields — degrade to
@@ -139,8 +142,10 @@ export function PayoutCard({
         return null;
       }
       const zat = computePayoutZat(distanceM, info);
+      const usd = payoutUsd(zat, info);
       setAmountZat(zat);
-      return zat;
+      setAmountUsd(usd);
+      return { zat, usd };
     } catch {
       return null; // backend unreachable for info — amount just not shown
     }
@@ -163,8 +168,17 @@ export function PayoutCard({
         setTxid(data.txid);
         // Withdraw settles the ACCRUED balance, so that's the ride's amount.
         const paid = accruedBalance?.pending_zatoshi;
-        if (paid != null && paid > 0) setAmountZat(paid);
-        void updateRideTxid(rideId, data.txid, paid);
+        let usd: number | null = null;
+        if (paid != null && paid > 0) {
+          setAmountZat(paid);
+          try {
+            usd = payoutUsd(paid, await getTreasuryInfo());
+            setAmountUsd(usd);
+          } catch {
+            /* USD is cosmetic */
+          }
+        }
+        void updateRideTxid(rideId, data.txid, paid, usd ?? undefined);
         setPhase('paid');
         setAccruedBalance(null);
         setMessage('');
@@ -220,8 +234,13 @@ export function PayoutCard({
       if (row.status === 'paid' && row.payout_txid) {
         setStage(3);
         setTxid(row.payout_txid);
-        const paid = (await amountPromise) ?? undefined;
-        void updateRideTxid(rideId, row.payout_txid, paid);
+        const paid = await amountPromise;
+        void updateRideTxid(
+          rideId,
+          row.payout_txid,
+          paid?.zat,
+          paid?.usd ?? undefined,
+        );
         setPhase('paid');
         setMessage('');
       } else if (row.status === 'rejected') {
@@ -255,6 +274,9 @@ export function PayoutCard({
             <Text style={styles.amountLine}>
               +{(amountZat / 1e8).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')}{' '}
               ZEC
+              {formatUsd(amountUsd) ? (
+                <Text style={styles.amountUsd}>  ≈ {formatUsd(amountUsd)}</Text>
+              ) : null}
             </Text>
           ) : null}
           <Text style={styles.paidLine}>
@@ -417,6 +439,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: -0.5,
     marginBottom: theme.space.xs,
+  },
+  amountUsd: {
+    color: theme.color.textDim,
+    fontSize: 16,
+    fontWeight: '600',
   },
   txidLabel: {
     color: theme.color.textDim,

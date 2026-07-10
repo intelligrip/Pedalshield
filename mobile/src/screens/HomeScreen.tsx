@@ -184,7 +184,15 @@ function RecentRides({ rides }: { rides: RideRecord[] }) {
               {formatDistance(r.distanceKm)} {distanceUnit()}
             </Text>
             {r.amountZat != null && r.amountZat > 0 ? (
-              <Text style={styles.rideZec}>+{zecFromZat(r.amountZat)} ZEC</Text>
+              <Text style={styles.rideZec}>
+                +{zecFromZat(r.amountZat)} ZEC
+                {r.amountUsd != null && r.amountUsd > 0 ? (
+                  <Text style={styles.rideUsd}>
+                    {' '}
+                    · {r.amountUsd < 0.005 ? '<$0.01' : `$${r.amountUsd.toFixed(2)}`}
+                  </Text>
+                ) : null}
+              </Text>
             ) : null}
             {r.txid ? (
               <Pressable
@@ -300,6 +308,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
     marginRight: theme.space.sm,
+  },
+  rideUsd: {
+    color: theme.color.textDim,
+    fontSize: 12,
+    fontWeight: '600',
   },
   ridePending: { color: theme.color.textMuted, fontSize: 13 },
   cardLabel: {

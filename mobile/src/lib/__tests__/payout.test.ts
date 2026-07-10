@@ -39,3 +39,23 @@ describe('computePayoutZat — mirrors backend compute_payout', () => {
     assert.equal(computePayoutZat(10_000, demo), 5_000_000); // capped
   });
 });
+
+describe('payoutUsd / formatUsd — peg-derived USD display', () => {
+  // Real payout from July 10: 24,964 zat at 10,596 zat/km should be
+  // ≈ $0.13 at the EPA peg ($0.086/mi = $0.053438/km).
+  it('derives USD from the pegged rate (no price API)', async () => {
+    const { payoutUsd } = await import('../api.ts');
+    const usd = payoutUsd(24_964, { zat_per_km: 10_596 });
+    if (usd == null) throw new Error('expected a value');
+    if (Math.abs(usd - 0.1259) > 0.005) throw new Error(`got ${usd}`);
+  });
+
+  it('returns null on missing/zero rate and dust formats as <$0.01', async () => {
+    const { payoutUsd, formatUsd } = await import('../api.ts');
+    if (payoutUsd(1000, { zat_per_km: 0 }) !== null) throw new Error('rate 0');
+    if (payoutUsd(0, { zat_per_km: 10_596 }) !== null) throw new Error('zat 0');
+    if (formatUsd(0.001) !== '<$0.01') throw new Error('dust');
+    if (formatUsd(0.126) !== '$0.13') throw new Error('rounding');
+    if (formatUsd(null) !== null) throw new Error('null');
+  });
+});

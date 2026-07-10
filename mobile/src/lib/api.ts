@@ -154,6 +154,36 @@ export function computePayoutZat(
   return Math.min(raw, info.max_payout_zat);
 }
 
+/**
+ * The carbon peg in USD per km: EPA social cost of carbon (~$190/tonne =>
+ * $0.086 per lb, 1 lb CO2 avoided per mile). Must match
+ * deploy/repeg_carbon_rate.sh (USD_PER_LB_CO2 / KM_PER_MILE).
+ */
+export const USD_PER_KM_PEG = 0.086 / 1.609344;
+
+/**
+ * USD value of a payout, derived from the peg itself — no external price
+ * API. Because the backend's zat/km is repegged so that 1 km pays exactly
+ * USD_PER_KM_PEG, the implied price is baked into the rate:
+ *   usd = zat / zat_per_km × USD_PER_KM_PEG
+ * Accurate to within the drift since the last repeg run.
+ */
+export function payoutUsd(
+  amountZat: number,
+  info: Pick<TreasuryInfo, 'zat_per_km'>,
+): number | null {
+  if (!Number.isFinite(info.zat_per_km) || info.zat_per_km <= 0) return null;
+  if (!Number.isFinite(amountZat) || amountZat <= 0) return null;
+  return (amountZat / info.zat_per_km) * USD_PER_KM_PEG;
+}
+
+/** "$0.13", "<$0.01" for dust, "$1.20" — display formatting for payoutUsd. */
+export function formatUsd(usd: number | null | undefined): string | null {
+  if (usd == null || !Number.isFinite(usd) || usd <= 0) return null;
+  if (usd < 0.005) return '<$0.01';
+  return `$${usd.toFixed(2)}`;
+}
+
 export interface LeaderboardEntry {
   rank: number;
   handle: string | null;

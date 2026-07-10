@@ -30,6 +30,8 @@ export interface RideRecord {
   txid?: string;
   /** ZEC earned for this ride, in zatoshi (optional; set when paid). */
   amountZat?: number;
+  /** USD value at the pegged rate when paid (optional). */
+  amountUsd?: number;
 }
 
 export interface HistorySummary {
@@ -191,6 +193,7 @@ export async function updateRideTxid(
   id: string,
   txid: string,
   amountZat?: number,
+  amountUsd?: number,
 ): Promise<void> {
   const i = _records.findIndex((r) => r.id === id);
   if (i < 0) return;
@@ -198,6 +201,7 @@ export async function updateRideTxid(
     ..._records[i],
     txid,
     ...(amountZat != null && amountZat > 0 ? { amountZat } : {}),
+    ...(amountUsd != null && amountUsd > 0 ? { amountUsd } : {}),
   };
   emit();
   await persist();
