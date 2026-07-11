@@ -6,7 +6,7 @@
 - **Team:** IntelliGrip Industries (Sam Newman)
 - **Code:** https://github.com/intelligrip/Pedalshield
 - **License:** MIT
-- **Demo video:** `<YOUTUBE/VIMEO URL — paste before opening the PR>`
+- **Demo video:** `PASTE_VIDEO_URL`
 - **Live site:** https://pedalshield.app
 
 ## Verify it yourself in 30 seconds (no build required)

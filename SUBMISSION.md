@@ -20,7 +20,7 @@ pays real shielded ZEC on Zcash mainnet**, with no human in the loop.
 
 **Track:** Games
 
-**Demo video:** `<URL — landing before deadline: real ride → on-device verify → shielded payout → txid in explorer>`
+**Demo video:** `PASTE_VIDEO_URL` — a real outdoor ride, verified on-device, paid autonomously in shielded ZEC on mainnet, with the txid checked live on the block explorer.
 
 ### What's live right now (not a promise — a running system)
 
@@ -32,6 +32,8 @@ The full loop runs end-to-end on a **deployed, internet-facing backend**:
 
 - **Live backend:** `https://api.pedalshield.app/healthz` returns `{"ok":true,...}`.
 - **Reproducible mainnet payouts (real txids):**
+  - `7bb0309585171f6ff977357f991fbbd98668793dc0ef6effdc300d1c230c3595` — the payout **shown in the demo video** (July 10, 2026): 0.83 mi verified on-device, paid at the EPA carbon rate, no human in the loop.
+  - `b34883138d8b7742ea24c645c2940e616226f9527897dcd8343f7a1550ec9941` — same-day repeat (2.36 km, 24,964 zatoshi).
   - `a64f2b159e92558b7070d25f0f708ca99b3401ed9ae23ac626c2ea2a2db2f1d8` — a payout from the **deployed** system, triggered by a verified ride.
   - `2a849aca…b264ab`, `f1a3bacc…c10ba6`, `ef0e2a57…060587` — earlier autonomous Orchard payouts.
 - **NU6.2-current:** the entire stack was re-pinned within days of the June 2026 emergency upgrade; the live consensus branch id is `0x5437f330`.
@@ -97,7 +99,7 @@ token. Every uncertain version and deferred chunk is named in the docs.
 - [x] Architecture diagram + honest security write-up (`docs/ARCHITECTURE.md`)
 - [x] Real shielded mainnet payout executed (txids above)
 - [x] iOS app built + on TestFlight
-- [ ] Demo video recorded and uploaded (real ride → verify → payout → txid)
+- [x] Demo video recorded and uploaded (real ride → verify → payout → txid)
 - [ ] Demo video posted in Zcash Global Discord
 - [ ] PR opened against the ZecHub 2026 folder
 
