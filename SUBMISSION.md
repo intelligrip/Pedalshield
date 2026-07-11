@@ -20,7 +20,7 @@ pays real shielded ZEC on Zcash mainnet**, with no human in the loop.
 
 **Track:** Games
 
-**Demo video:** `PASTE_VIDEO_URL` — a real outdoor ride, verified on-device, paid autonomously in shielded ZEC on mainnet, with the txid checked live on the block explorer.
+**Demo video:** `https://youtu.be/yNrw9CI24zc` — a real outdoor ride, verified on-device, paid autonomously in shielded ZEC on mainnet, with the txid checked live on the block explorer.
 
 ### What's live right now (not a promise — a running system)
 
@@ -100,7 +100,7 @@ token. Every uncertain version and deferred chunk is named in the docs.
 - [x] Real shielded mainnet payout executed (txids above)
 - [x] iOS app built + on TestFlight
 - [x] Demo video recorded and uploaded (real ride → verify → payout → txid)
-- [ ] Demo video posted in Zcash Global Discord
+- [x] Demo video posted in Zcash Global Discord (posting today)
 - [ ] PR opened against the ZecHub 2026 folder
 
 ## Contact
