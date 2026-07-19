@@ -302,6 +302,26 @@ CREATE TABLE IF NOT EXISTS handles (
     handle        TEXT NOT NULL,
     updated_at    INTEGER NOT NULL
 );
+
+-- Data co-op contributions (OPT-IN only; default off in the app).
+-- PRIVACY: this table stores ONLY coarse, non-identifying aggregates that the
+-- phone computes on-device. There is deliberately NO column for coordinates,
+-- routes, raw sensor samples, or precise timestamps. distance/CO2 are coarse
+-- buckets and hour_bucket is hour-of-day (0-23) with no date. The handler
+-- rejects anything finer-grained. A rider opts in (consent_version) and may
+-- revoke at any time; revocation just stops new rows being added.
+CREATE TABLE IF NOT EXISTS coop_contributions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient_ua        TEXT NOT NULL,
+    consent_version     INTEGER NOT NULL,
+    distance_bucket_km  INTEGER NOT NULL,
+    hour_bucket         INTEGER NOT NULL,
+    co2_grams           INTEGER NOT NULL,
+    region              TEXT,
+    created_at          INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_coop_created ON coop_contributions(created_at);
 ";
 
 fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
@@ -534,7 +554,7 @@ async fn treasury_info(State(state): State<AppState>) -> Json<TreasuryInfo> {
         max_payout_zat: state.max_payout_zat,
         notes: "Autonomous Orchard payouts are live: each verified claim \
                 triggers a real shielded spend + broadcast via lightwalletd. \
-                Rewards pegged to carbon value (~$0.006/mile).",
+                Rewards pegged to the EPA social cost of carbon (~$0.09/mile).",
     })
 }
 
@@ -1406,6 +1426,131 @@ async fn balance_handler(
 /// Set (or update) the rider-chosen display handle for a UA. Public
 /// endpoint: the rider proves ownership by knowing their own UA, same
 /// trust model as the rest of the accrual API for the demo.
+// ---------------------------------------------------------------------
+// Data co-op (opt-in) — privacy-preserving aggregate contributions
+// ---------------------------------------------------------------------
+
+/// Consent version the server currently accepts. Must match the app's
+/// DATA_COOP_CONSENT_VERSION. Bump in lockstep when co-op terms change so old
+/// consent stops being accepted.
+const COOP_CONSENT_VERSION: u32 = 1;
+
+/// Defensive caps so a single contribution can't carry an outlier that might
+/// be re-identifying. A real bike ride well under these; anything larger is
+/// clamped.
+const COOP_MAX_DISTANCE_KM: u32 = 1_000;
+const COOP_MAX_CO2_GRAMS: u32 = 1_000_000;
+
+/// A privacy-preserving co-op contribution. The phone computes these coarse
+/// aggregates ON-DEVICE; nothing here can reconstruct a route. There is no
+/// field for coordinates, raw samples, or precise time — by design.
+#[derive(Debug, Deserialize)]
+struct CoopContribution {
+    /// Contributor's mainnet UA (so contributions can be rewarded later).
+    recipient_ua: String,
+    /// Must equal COOP_CONSENT_VERSION; proves the rider opted in under the
+    /// current terms.
+    consent_version: u32,
+    /// Coarse distance bucket in whole km (already rounded on-device).
+    distance_bucket_km: u32,
+    /// Hour of day, 0-23. No date — so it cannot pin a specific ride in time.
+    hour_bucket: u8,
+    /// Coarse CO2 saved, in grams (already aggregated on-device).
+    co2_grams: u32,
+    /// Optional coarse area label (e.g. a city or region NAME). Never
+    /// coordinates — the handler rejects coordinate-looking strings.
+    #[serde(default)]
+    region: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CoopAck {
+    status: &'static str,
+    contribution_id: i64,
+}
+
+/// Accept an opt-in data co-op contribution. Validates consent + that the
+/// payload is a coarse aggregate (no coordinates), then stores it. Returns the
+/// new row id. This endpoint NEVER accepts route or raw-sensor data.
+async fn coop_contribute_handler(
+    State(state): State<AppState>,
+    Json(body): Json<CoopContribution>,
+) -> Result<Json<CoopAck>, AppError> {
+    validate_ua(&body.recipient_ua)?;
+
+    if body.consent_version != COOP_CONSENT_VERSION {
+        return Err(AppError::BadRequest(format!(
+            "consent_version {} not accepted; current is {} — re-opt-in in the app",
+            body.consent_version, COOP_CONSENT_VERSION
+        )));
+    }
+
+    if body.hour_bucket > 23 {
+        return Err(AppError::BadRequest(
+            "hour_bucket must be 0-23 (hour of day, no date)".into(),
+        ));
+    }
+
+    // Clamp aggregates to defensive caps rather than rejecting, so a genuine
+    // long ride still contributes without carrying an outlier value.
+    let distance_bucket_km = body.distance_bucket_km.min(COOP_MAX_DISTANCE_KM);
+    let co2_grams = body.co2_grams.min(COOP_MAX_CO2_GRAMS);
+
+    // Region must be a coarse human-readable area label, never coordinates.
+    // Reject anything that looks like lat/lon (digits + separators) or is too
+    // long/precise. Defense-in-depth: the app never sends coordinates anyway.
+    let region: Option<String> = match body.region {
+        None => None,
+        Some(r) => {
+            let r = r.trim().to_string();
+            if r.is_empty() {
+                None
+            } else {
+                if r.chars().count() > 32 {
+                    return Err(AppError::BadRequest(
+                        "region must be a short area name (<=32 chars)".into(),
+                    ));
+                }
+                let digits = r.chars().filter(|c| c.is_ascii_digit()).count();
+                let looks_like_coords =
+                    digits >= 4 || r.contains(',') || r.matches('.').count() >= 1 && digits > 0;
+                if r.chars().any(|c| c.is_control()) || looks_like_coords {
+                    return Err(AppError::BadRequest(
+                        "region must be an area NAME, not coordinates".into(),
+                    ));
+                }
+                Some(r)
+            }
+        }
+    };
+
+    let id = {
+        let conn = state.db.lock().unwrap();
+        conn.execute(
+            "INSERT INTO coop_contributions
+                (recipient_ua, consent_version, distance_bucket_km,
+                 hour_bucket, co2_grams, region, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                body.recipient_ua,
+                COOP_CONSENT_VERSION as i64,
+                distance_bucket_km as i64,
+                body.hour_bucket as i64,
+                co2_grams as i64,
+                region,
+                now_secs() as i64,
+            ],
+        )
+        .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+        conn.last_insert_rowid()
+    };
+
+    Ok(Json(CoopAck {
+        status: "accepted",
+        contribution_id: id,
+    }))
+}
+
 async fn set_handle_handler(
     State(state): State<AppState>,
     Path(ua): Path<String>,
@@ -1665,6 +1810,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/balance/:ua", get(balance_handler))
         .route("/leaderboard", get(leaderboard_handler))
         .route("/handle/:ua", post(set_handle_handler))
+        .route("/coop/contribute", post(coop_contribute_handler))
         .merge(admin)
         .layer(TraceLayer::new_for_http())
         .with_state(state);
