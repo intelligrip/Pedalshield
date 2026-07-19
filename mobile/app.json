@@ -25,7 +25,11 @@
         "NSLocalNetworkUsageDescription": "Pedalshield connects to your local Pedalshield treasury backend over the local network to submit ride claims.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "UIBackgroundModes": [
+          "location"
+        ],
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Pedalshield tracks your ride with the screen off. All processing stays on-device \u2014 your route never leaves the phone."
       }
     },
     "android": {
@@ -51,7 +55,14 @@
     "owner": "sbnewman",
     "plugins": [
       "expo-status-bar",
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-location",
+        {
+          "isIosBackgroundLocationEnabled": true,
+          "locationAlwaysAndWhenInUsePermission": "Pedalshield tracks your ride with the screen off. All processing stays on-device \u2014 your route never leaves the phone."
+        }
+      ]
     ],
     "runtimeVersion": {
       "policy": "appVersion"

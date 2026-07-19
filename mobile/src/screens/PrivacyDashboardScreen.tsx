@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
 import { MapPacksCard } from '../components/MapPacksCard.tsx';
+import { PrivacyCheckupCard } from '../components/PrivacyCheckupCard.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { theme } from '../app/theme.ts';
 import { getConnectedUA, onConnectedUAChange } from '../wallet/connectedWallet.ts';
@@ -106,6 +107,8 @@ export function PrivacyDashboardScreen() {
           </Text>
         ) : null}
       </Card>
+
+      <PrivacyCheckupCard />
 
       <MapPacksCard />
 
