@@ -71,3 +71,6 @@ clips/*.mov
 clips/*.mp4
 clips/*.MOV
 clips/*.MP4
+
+# Live databases are never in git (each deployment owns its own)
+zcash-service/pedalshield.sqlite
