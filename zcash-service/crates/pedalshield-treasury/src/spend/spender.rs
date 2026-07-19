@@ -162,7 +162,17 @@ pub async fn pay(
 
     let target_height = BlockHeight::from_u32(tip as u32);
     let fee_rule = FeeRule::standard();
-    let cfg = || BuildConfig::Standard { sapling_anchor: None, orchard_anchor: Some(anchor) };
+    let cfg = || BuildConfig::Standard {
+        sapling_anchor: None,
+        orchard_anchor: Some(anchor),
+        // NU6.3 (Ironwood): we neither spend nor create notes in the new
+        // Ironwood pool yet — treasury notes live in legacy Orchard. Pool
+        // migration is tracked in docs/IRONWOOD_MIGRATION.md (phase 2+).
+        ironwood_anchor: None,
+        // Same padded transactional discipline the pre-0.29 builder applied
+        // implicitly; padding hides the true action count (privacy).
+        orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
+    };
 
     // --- fee probe (action count, hence fee, is independent of values) ---
     let has_change = amount_zat > 0;

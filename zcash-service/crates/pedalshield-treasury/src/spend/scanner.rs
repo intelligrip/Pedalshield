@@ -7,12 +7,14 @@
 //!
 //! Usage from `treasury_wallet sync` (and similar):
 //!
-//!     let mut tree = OrchardTree::empty();
-//!     let mut found = Vec::new();
-//!     let mut progress = ScanProgress::default();
-//!     for block in block_stream {
-//!         process_block(&block, &ivk, &mut tree, &mut found, &mut progress)?;
-//!     }
+//! ```text
+//! let mut tree = OrchardTree::empty();
+//! let mut found = Vec::new();
+//! let mut progress = ScanProgress::default();
+//! for block in block_stream {
+//!     process_block(&block, &ivk, &mut tree, &mut found, &mut progress)?;
+//! }
+//! ```
 
 use std::collections::HashSet;
 
