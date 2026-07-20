@@ -100,6 +100,13 @@ export interface RideFeatures {
    * Defaults to 1 ("varied") when there's insufficient data to judge.
    */
   movingSpeedCv: number;
+  /**
+   * Fraction of claimed distance excised as physically impossible motion
+   * (teleport joints + noise slivers), 0..1. Verified distance already
+   * excludes it — this feature exists so the scorer can reject rides that
+   * are MOSTLY excision.
+   */
+  excisedRatio: number;
 }
 
 export type FlagCode =
