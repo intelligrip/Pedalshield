@@ -94,6 +94,12 @@ export interface RideFeatures {
   sampleDensity: number;
   /** displacement / pathLength; 1 = perfectly straight */
   straightLineRatio: number;
+  /**
+   * Coefficient of variation of moving-segment speeds (std/mean).
+   * Real riders vary; replayed/generated tracks are metronome-constant.
+   * Defaults to 1 ("varied") when there's insufficient data to judge.
+   */
+  movingSpeedCv: number;
 }
 
 export type FlagCode =
