@@ -15,6 +15,7 @@ import { loadConnectedWallet } from './src/wallet/connectedWallet.ts';
 import { loadUnitPreference } from './src/lib/units.ts';
 import { loadRideHistory } from './src/ride/rideHistory.ts';
 import { loadDataCoopPrefs } from './src/prefs/dataCoop.ts';
+import { loadPrivateRidePrefs } from './src/prefs/privateRide.ts';
 import {
   clearLastCrash,
   getLastCrash,
@@ -148,6 +149,7 @@ export default function App() {
     void loadUnitPreference(); // restore mi/km choice before screens render
     void loadRideHistory(); // restore banked rides (history + YTD)
     void loadDataCoopPrefs(); // restore data co-op opt-in (defaults OFF)
+    void loadPrivateRidePrefs(); // restore ghost-ride checklist state
     loadConnectedWallet()
       .catch((err) => {
         console.error('[boot] connected-wallet restore failed:', err);

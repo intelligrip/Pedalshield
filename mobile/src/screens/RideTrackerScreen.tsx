@@ -12,6 +12,7 @@ import { Button } from '../components/Button.tsx';
 import { Card } from '../components/Card.tsx';
 import { LiveRouteMap } from '../components/LiveRouteMap.tsx';
 import { PayoutCard } from '../components/PayoutCard.tsx';
+import { GhostRideSheet } from '../components/GhostRideSheet.tsx';
 import { PrivacyRevealSheet } from '../components/PrivacyRevealSheet.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
@@ -19,6 +20,7 @@ import { theme } from '../app/theme.ts';
 import { RideSession, type RideSessionSnapshot } from '../ride/rideSession.ts';
 import { computeRideStats } from '../ride/rideStats.ts';
 import { addRide } from '../ride/rideHistory.ts';
+import { getPrivateRidePrefs } from '../prefs/privateRide.ts';
 import { RideStatsCard } from '../components/RideStatsCard.tsx';
 import type { RawRide } from '../verification/types.ts';
 import {
@@ -64,6 +66,7 @@ export function RideTrackerScreen() {
   );
   const [tick, setTick] = useState(0);
   const [revealOpen, setRevealOpen] = useState(false);
+  const [ghostOpen, setGhostOpen] = useState(false);
 
   useEffect(() => {
     const off = sessionRef.current.subscribe(setSnap);
@@ -80,6 +83,18 @@ export function RideTrackerScreen() {
     sessionRef.current.start();
     sourceRef.current.start(sessionRef.current);
     cueStart();
+  }
+
+  // Privacy-first start: the Ghost Ride checklist (close other trackers,
+  // optional Airplane Mode) gates the FIRST ride, and every ride if the
+  // rider opts in. The settings foundation comes before the tracking.
+  function requestStartRide() {
+    const prefs = getPrivateRidePrefs();
+    if (!prefs.acknowledged || prefs.showEveryRide) {
+      setGhostOpen(true);
+      return;
+    }
+    startRide();
   }
 
   function finishRide() {
@@ -195,7 +210,18 @@ export function RideTrackerScreen() {
 
       <View style={styles.actions}>
         {snap.state === 'idle' && (
-          <Button label="Start ride" size="lg" onPress={startRide} />
+          <>
+            <Button label="Start ride" size="lg" onPress={requestStartRide} />
+            <Pressable
+              onPress={() => setGhostOpen(true)}
+              hitSlop={8}
+              style={styles.ghostLink}
+            >
+              <Text style={styles.ghostLinkText}>
+                🛡 Private-ride checklist ›
+              </Text>
+            </Pressable>
+          </>
         )}
         {riding && (
           <View style={styles.ridingActions}>
@@ -225,6 +251,15 @@ export function RideTrackerScreen() {
         onClose={() => setRevealOpen(false)}
         rideId={snap.rideId ?? ''}
         distanceM={snap.stats.liveKm * 1000}
+      />
+
+      <GhostRideSheet
+        visible={ghostOpen}
+        onProceed={() => {
+          setGhostOpen(false);
+          startRide();
+        }}
+        onClose={() => setGhostOpen(false)}
       />
     </ScreenContainer>
   );
@@ -608,6 +643,12 @@ function PostRide({
 }
 
 const styles = StyleSheet.create({
+  ghostLink: { alignItems: 'center', marginTop: 10 },
+  ghostLinkText: {
+    color: theme.color.textDim,
+    fontSize: 13,
+    fontWeight: '600',
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
