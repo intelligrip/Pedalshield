@@ -107,6 +107,10 @@ export interface RideFeatures {
    * are MOSTLY excision.
    */
   excisedRatio: number;
+  /** seconds spent above the moving-speed threshold (eligible segments) */
+  movingTimeS: number;
+  /** diagonal of the ride's bounding box, km — jitter never leaves the box */
+  bboxDiagonalKm: number;
 }
 
 export type FlagCode =
@@ -120,7 +124,9 @@ export type FlagCode =
   | 'TOO_STRAIGHT'
   | 'NO_ATTESTATION'
   | 'NO_MOTION_DATA'
-  | 'GPS_SYNTHETIC';
+  | 'GPS_SYNTHETIC'
+  | 'RIDE_TOO_SHORT'
+  | 'STATIONARY';
 
 export interface VerificationFlag {
   code: FlagCode;
