@@ -22,10 +22,6 @@
         "NSLocationWhenInUseUsageDescription": "Pedalshield uses GPS only on-device to verify your ride distance. Your route never leaves the phone.",
         "NSMotionUsageDescription": "Pedalshield uses motion sensors on-device to verify pedaling cadence. No motion data is uploaded.",
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocalNetworkUsageDescription": "Pedalshield connects to your local Pedalshield treasury backend over the local network to submit ride claims.",
-        "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true
-        },
         "UIBackgroundModes": [
           "location"
         ],

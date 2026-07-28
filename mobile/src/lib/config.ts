@@ -11,11 +11,17 @@
  * NSAllowsLocalNetworking exception so LAN http:// works for the demo.
  */
 /**
- * Production builds inject EXPO_PUBLIC_BACKEND_URL via eas.json (the
- * `production` profile). Dev builds fall back to the Mac's LAN IP.
+ * FAIL-SAFE DIRECTION MATTERS: the default is PRODUCTION, and the LAN dev
+ * backend is the explicit override. The old inversion (default = dev LAN
+ * IP) shipped to riders via `eas update`, because OTA publishes bundle on
+ * the local machine where eas.json build-env is NOT applied — phones then
+ * tried to reach a MacBook on someone else's WiFi and iOS showed riders a
+ * local-network/location-profiling warning inside a privacy app.
+ *
+ * Dev usage: EXPO_PUBLIC_BACKEND_URL=http://<mac-lan-ip>:8787 npx expo start
  */
 export const BACKEND_URL =
-  process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://192.168.0.136:8787';
+  process.env.EXPO_PUBLIC_BACKEND_URL ?? 'https://api.pedalshield.app';
 
 /** Block explorer base for surfacing a payout txid. */
 export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/';
