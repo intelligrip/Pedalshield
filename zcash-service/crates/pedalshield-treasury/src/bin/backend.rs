@@ -316,9 +316,9 @@ CREATE INDEX IF NOT EXISTS idx_claims_created ON claims(created_at);
 -- keypair on first run, keeps the private half in the phone's
 -- Secure-Enclave-protected keychain, and registers ONLY the public half
 -- here. Every claim must carry a signature over the canonical claim
--- message, verified against this table. That turns "anyone can POST a
--- claim" into "only a registered device can", and lets spend limits
--- attach to a stable rider identity instead of a self-declared address.
+-- message, verified against this table. That turns anyone-can-POST-a-claim
+-- into only-a-registered-device-can, and lets spend limits attach to a
+-- stable rider identity instead of a self-declared address.
 --
 -- Deliberately NOT identity: the rider id is a random pseudonym, there is
 -- no email/phone/name column, and the key says nothing about who holds it.
@@ -571,8 +571,9 @@ fn insert_claim(conn: &Connection, c: &ClaimRow) -> Result<(), rusqlite::Error> 
     conn.execute(
         "INSERT INTO claims
             (id, recipient_ua, distance_meters, signature, attestation,
-             status, payout_txid, rejection_reason, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             status, payout_txid, rejection_reason, created_at, updated_at,
+             rider_id, signed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             c.id,
             c.recipient_ua,
@@ -584,6 +585,8 @@ fn insert_claim(conn: &Connection, c: &ClaimRow) -> Result<(), rusqlite::Error> 
             c.rejection_reason,
             c.created_at as i64,
             c.updated_at as i64,
+            c.rider_id,
+            c.signed_at.map(|t| t as i64),
         ],
     )?;
     Ok(())
@@ -745,6 +748,12 @@ fn row_to_claim(row: &rusqlite::Row) -> rusqlite::Result<ClaimRow> {
         recipient_ua: row.get(1)?,
         distance_meters: row.get::<_, i64>(2)? as u64,
         signature: row.get(3)?,
+        // Not selected by the positional queries that feed this mapper;
+        // rider_id / signed_at matter at verification time (post_claim),
+        // not when replaying a stored claim for payout. Kept None here so
+        // existing SELECT column orders stay untouched.
+        rider_id: None,
+        signed_at: None,
         attestation: row.get(4)?,
         status: row.get(5)?,
         payout_txid: row.get(6)?,
