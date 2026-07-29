@@ -165,10 +165,27 @@ pub async fn pay(
     let cfg = || BuildConfig::Standard {
         sapling_anchor: None,
         orchard_anchor: Some(anchor),
-        // NU6.3 (Ironwood): we neither spend nor create notes in the new
-        // Ironwood pool yet — treasury notes live in legacy Orchard. Pool
-        // migration is tracked in docs/IRONWOOD_MIGRATION.md (phase 2+).
-        ironwood_anchor: None,
+        // NU6.3 (Ironwood) — MIGRATION SPEND.
+        //
+        // After activation, legacy `orchard_v3` bundles are built with
+        // cross-address transfers DISABLED (zcash_primitives 0.29
+        // builder.rs:306-317): every output must be wallet-controlled
+        // change. Paying a rider from a legacy bundle therefore fails with
+        // OutputError::CrossAddressDisabled — which is exactly what the
+        // treasury hit on the first post-activation claim.
+        //
+        // Supplying an ironwood anchor selects the `ironwood_v3` bundle
+        // version (builder.rs:327-333), which permits ordinary outputs. We
+        // spend legacy Orchard notes (orchard_anchor, above) and create
+        // Ironwood notes: the migration path, one payout at a time.
+        //
+        // The anchor may be the empty tree because this bundle spends
+        // NOTHING from the Ironwood pool — an anchor is only needed to
+        // witness spends, and upstream's own tests use empty_tree() for
+        // exactly this case. NOTE: our CHANGE now lands in the Ironwood
+        // pool, so the scanner must learn to track Ironwood notes before
+        // the treasury can spend that change (see IRONWOOD_MIGRATION.md).
+        ironwood_anchor: Some(orchard::Anchor::empty_tree()),
         // Same padded transactional discipline the pre-0.29 builder applied
         // implicitly; padding hides the true action count (privacy).
         orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
@@ -182,17 +199,20 @@ pub async fn pay(
             .add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path.clone())
             .map_err(|e| format!("probe add_orchard_spend: {e:?}"))?;
         let probe_recipient_val = if amount_zat == 0 { note_value_zat } else { amount_zat };
+        // NU6.3: rider payment must be an IRONWOOD output (see the real
+        // build below for the full rationale).
         probe
-            .add_orchard_output::<FeeError>(
+            .add_ironwood_output::<FeeError>(
                 Some(ovk_ext.clone()),
                 recipient.clone(),
                 Zatoshis::from_u64(probe_recipient_val).map_err(|e| format!("zatoshis: {e:?}"))?,
                 MemoBytes::empty(),
             )
-            .map_err(|e| format!("probe add_orchard_output: {e:?}"))?;
+            .map_err(|e| format!("probe add_ironwood_output: {e:?}"))?;
         if has_change {
             probe
-                .add_orchard_output::<FeeError>(
+                .add_orchard_change_output::<FeeError>(
+                    fvk.clone(),
                     Some(ovk_int.clone()),
                     change_addr,
                     Zatoshis::from_u64(1).unwrap(),
@@ -224,17 +244,39 @@ pub async fn pay(
     builder
         .add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path)
         .map_err(|e| format!("add_orchard_spend: {e:?}"))?;
+    // NU6.3 (Ironwood) migration spend, three moving parts:
+    //
+    //  1. SPEND stays legacy Orchard — that's where the treasury's notes
+    //     live (add_orchard_spend above, orchard_anchor from our tree).
+    //  2. The RIDER'S PAYMENT must be an IRONWOOD output. Post-activation,
+    //     legacy `orchard_v3` bundles are constructed with cross-address
+    //     transfers disabled (zcash_primitives 0.29 builder.rs: flags come
+    //     from `bundle_version.default_flags()`), so a legacy output to a
+    //     third party fails with OutputError::CrossAddressDisabled — the
+    //     exact error that stopped payouts on activation day. The Ironwood
+    //     builder permits ordinary recipients.
+    //  3. CHANGE stays in the LEGACY pool via add_orchard_change_output:
+    //     wallet-controlled change is explicitly allowed even when
+    //     cross-address transfers are disabled. This matters operationally
+    //     — our scanner tracks legacy Orchard notes, so keeping change in
+    //     that pool means the treasury can still see and spend its own
+    //     balance. (Ironwood-pool scanning is the next milestone; it only
+    //     becomes necessary if the treasury is ever paid INTO Ironwood.)
+    //
+    // Value flows legacy pool -> Ironwood pool across the two bundles,
+    // which is precisely the migration path the upgrade defines.
     builder
-        .add_orchard_output::<FeeError>(
+        .add_ironwood_output::<FeeError>(
             Some(ovk_ext),
             recipient,
             Zatoshis::from_u64(recipient_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
             MemoBytes::empty(),
         )
-        .map_err(|e| format!("add_orchard_output: {e:?}"))?;
+        .map_err(|e| format!("add_ironwood_output: {e:?}"))?;
     if change_value_zat > 0 {
         builder
-            .add_orchard_output::<FeeError>(
+            .add_orchard_change_output::<FeeError>(
+                fvk.clone(),
                 Some(ovk_int),
                 change_addr,
                 Zatoshis::from_u64(change_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
