@@ -566,7 +566,7 @@ function PostRide({
     });
   }, [report, result.rideId, result.status]);
 
-  // Balance movement: either a real autonomous per-claim Orchard payout
+  // Balance movement: either a real autonomous per-claim shielded payout
   // (classic path) or off-chain accrual + later batched settlement
   // (PEDAL_ACCRUAL=1). PayoutCard now handles both "paid" (with txid) and
   // "accrued" (with live pending balance + withdraw-to-settle button).

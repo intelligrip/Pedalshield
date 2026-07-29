@@ -44,6 +44,11 @@ tiny-bip39 = "1"
 
 rand   = "0.8"
 sha2   = "0.10"
+# Rider claim signing (security v0.7): verify Ed25519 signatures over the
+# canonical claim message. Riders hold the private key in the phone's
+# Secure Enclave-protected keychain; only public keys reach the server.
+ed25519-dalek = "2"
+base64 = "0.22"
 # HMAC-SHA256 for verifying the price oracle's signed attestations
 # (deploy/oracle.sh signs with `openssl dgst -sha256 -hmac`). Standard,
 # audited construction — we do not hand-roll the MAC.

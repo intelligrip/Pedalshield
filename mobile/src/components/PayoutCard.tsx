@@ -36,7 +36,7 @@ type Phase = 'idle' | 'submitting' | 'polling' | 'paid' | 'accrued' | 'error';
 const PIPELINE = [
   'Claim sent — route stayed on your phone',
   'Treasury scanning shielded notes',
-  'Building + proving the Orchard transaction',
+  'Building + proving the Ironwood transaction',
   'Broadcast to Zcash mainnet',
 ] as const;
 
@@ -102,7 +102,8 @@ function Pipeline({ active, done }: { active: number; done: boolean }) {
 /**
  * Real autonomous-payout card. Submits the completed ride as a claim to
  * the Pedalshield backend, which builds + proves + signs + broadcasts a
- * shielded Orchard payout with no operator, then polls for the on-chain
+ * shielded Ironwood-pool payout with no operator, then polls for the
+ * on-chain
  * txid and shows it. Replaces the old simulated "FROST queued" copy.
  */
 export function PayoutCard({
@@ -157,7 +158,7 @@ export function PayoutCard({
     setPhase('submitting');
     setMessage('Settling your accrued balance on-chain...');
     try {
-      // POST /withdraw/:ua reuses the settlement path (real Orchard spend)
+      // POST /withdraw/:ua reuses the settlement path (real shielded spend)
       const res = await fetch(`${BACKEND_URL}/withdraw/${encodeURIComponent(recip)}`, {
         method: 'POST',
       });
@@ -283,6 +284,19 @@ export function PayoutCard({
             ✓ Shielded ZEC is on its way to your wallet. No operator
             touched it.
           </Text>
+          {/*
+            Post-NU6.3 honesty: payouts are now Ironwood-pool notes. A
+            wallet that hasn't shipped Ironwood support yet will show the
+            balance late (or not at all) even though the transaction is
+            final on-chain. Saying so up front beats a "where's my money"
+            support thread — the funds are safe either way.
+          */}
+          <Text style={styles.poolNote}>
+            Paid as an Ironwood-pool note (Zcash NU6.3). If your wallet
+            hasn&apos;t added Ironwood support yet, the balance may not
+            appear until it updates — the transaction below is final
+            regardless.
+          </Text>
           <Text style={styles.txidLabel}>Transaction</Text>
           <Text style={styles.txid} selectable>
             {txid}
@@ -360,7 +374,7 @@ export function PayoutCard({
         <>
           <Text style={styles.help}>
             Paste your Zodl (or any Zcash) Unified Address. The treasury builds and
-            broadcasts a real Orchard transaction automatically — no
+            broadcasts a real Ironwood-pool transaction automatically — no
             operator, route stays on device.
           </Text>
           <TextInput
@@ -444,6 +458,12 @@ const styles = StyleSheet.create({
     color: theme.color.textDim,
     fontSize: 16,
     fontWeight: '600',
+  },
+  poolNote: {
+    color: theme.color.textMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: theme.space.md,
   },
   txidLabel: {
     color: theme.color.textDim,

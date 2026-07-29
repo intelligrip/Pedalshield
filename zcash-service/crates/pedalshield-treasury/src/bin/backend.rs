@@ -74,6 +74,8 @@ struct AppState {
     /// Spend limits (security v0.6) — server-side ceilings that bound
     /// treasury loss while claim signatures are unverified. See post_claim.
     min_claim_interval_s: u64,
+    require_signed_claims: bool,
+    claim_signature_max_age_s: u64,
     ua_daily_meters: u64,
     global_daily_meters: u64,
     /// Serializes payouts so two claims never try to spend the same note
@@ -115,6 +117,10 @@ struct NewClaim {
     signature: String,
     /// Optional device attestation token (Play Integrity / App Attest).
     attestation: Option<String>,
+    /// Security v0.7: pseudonymous rider id issued by POST /rider/register.
+    rider_id: Option<String>,
+    /// Unix seconds the claim was signed (replay window).
+    signed_at: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -123,6 +129,10 @@ struct ClaimRow {
     recipient_ua: String,
     distance_meters: u64,
     signature: String,
+    #[serde(default)]
+    rider_id: Option<String>,
+    #[serde(default)]
+    signed_at: Option<u64>,
     attestation: Option<String>,
     status: String,
     payout_txid: Option<String>,
@@ -289,6 +299,8 @@ CREATE TABLE IF NOT EXISTS claims (
     recipient_ua      TEXT NOT NULL,
     distance_meters   INTEGER NOT NULL,
     signature         TEXT NOT NULL,
+    rider_id          TEXT,
+    signed_at         INTEGER,
     attestation       TEXT,
     status            TEXT NOT NULL DEFAULT 'pending',
     payout_txid       TEXT,
@@ -299,6 +311,25 @@ CREATE TABLE IF NOT EXISTS claims (
 
 CREATE INDEX IF NOT EXISTS idx_claims_status ON claims(status);
 CREATE INDEX IF NOT EXISTS idx_claims_created ON claims(created_at);
+
+-- Rider signing keys (security v0.7). A rider's app generates an Ed25519
+-- keypair on first run, keeps the private half in the phone's
+-- Secure-Enclave-protected keychain, and registers ONLY the public half
+-- here. Every claim must carry a signature over the canonical claim
+-- message, verified against this table. That turns "anyone can POST a
+-- claim" into "only a registered device can", and lets spend limits
+-- attach to a stable rider identity instead of a self-declared address.
+--
+-- Deliberately NOT identity: the rider id is a random pseudonym, there is
+-- no email/phone/name column, and the key says nothing about who holds it.
+CREATE TABLE IF NOT EXISTS riders (
+    rider_id      TEXT PRIMARY KEY,
+    pubkey_b64    TEXT NOT NULL UNIQUE,
+    recipient_ua  TEXT,
+    created_at    INTEGER NOT NULL,
+    last_seen_at  INTEGER NOT NULL,
+    revoked       INTEGER NOT NULL DEFAULT 0
+);
 
 -- Optional, rider-chosen display name for the community leaderboard.
 -- Keyed by recipient UA; the UA itself stays the source of truth.
@@ -335,6 +366,10 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     // Accrual ledger tables (step 1 of docs/SCALING_PAYOUTS.md). Additive
     // and idempotent; harmless when accrual mode is off.
     pedalshield_treasury::accrual::ensure_schema(&conn)?;
+    // Additive migration for databases created before security v0.7.
+    // ALTER TABLE ADD COLUMN errors if the column exists; ignore that.
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN rider_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN signed_at INTEGER", []);
     Ok(conn)
 }
 
@@ -384,6 +419,152 @@ fn secs_since_last_claim(
         |r| r.get(0),
     )?;
     Ok(last.map(|t| now.saturating_sub(t.max(0) as u64)))
+}
+
+
+// ---------------------------------------------------------------------
+// Rider claim signing (security v0.7)
+// ---------------------------------------------------------------------
+
+/// Registration request: the rider's app posts the PUBLIC half of a
+/// keypair whose private half never leaves the device's keychain.
+#[derive(Debug, Deserialize)]
+struct RegisterRider {
+    /// Base64 (standard, padded) 32-byte Ed25519 public key.
+    pubkey_b64: String,
+    /// Optional: bind this device to a payout address at registration.
+    recipient_ua: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct RegisterRiderResponse {
+    rider_id: String,
+    /// Echoed so the app can confirm what the server recorded.
+    pubkey_b64: String,
+}
+
+/// Canonical message a rider signs. Field order and separator are part of
+/// the protocol: any change breaks existing clients, so version it if it
+/// must change. Includes `signed_at` so signatures expire, and the UA so
+/// a captured signature cannot be redirected to a different wallet.
+fn claim_signing_message(
+    claim_id: &str,
+    recipient_ua: &str,
+    distance_meters: u64,
+    signed_at: u64,
+) -> String {
+    format!(
+        "pedalshield-claim-v1|{}|{}|{}|{}",
+        claim_id, recipient_ua, distance_meters, signed_at
+    )
+}
+
+/// Verify a base64 Ed25519 signature over the canonical claim message
+/// against a registered rider's public key.
+fn verify_claim_signature(
+    pubkey_b64: &str,
+    signature_b64: &str,
+    message: &str,
+) -> Result<(), String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let pk_bytes = STANDARD
+        .decode(pubkey_b64)
+        .map_err(|_| "stored pubkey is not valid base64".to_string())?;
+    let pk_arr: [u8; 32] = pk_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "stored pubkey is not 32 bytes".to_string())?;
+    let vk = VerifyingKey::from_bytes(&pk_arr)
+        .map_err(|_| "stored pubkey is not a valid Ed25519 key".to_string())?;
+
+    let sig_bytes = STANDARD
+        .decode(signature_b64)
+        .map_err(|_| "signature is not valid base64".to_string())?;
+    let sig_arr: [u8; 64] = sig_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "signature is not 64 bytes".to_string())?;
+    let sig = Signature::from_bytes(&sig_arr);
+
+    vk.verify(message.as_bytes(), &sig)
+        .map_err(|_| "signature does not verify".to_string())
+}
+
+/// Look up a rider's public key; None if unknown or revoked.
+fn rider_pubkey(
+    conn: &Connection,
+    rider_id: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    let mut stmt = conn
+        .prepare("SELECT pubkey_b64 FROM riders WHERE rider_id = ?1 AND revoked = 0")?;
+    let mut rows = stmt.query(params![rider_id])?;
+    Ok(match rows.next()? {
+        Some(r) => Some(r.get(0)?),
+        None => None,
+    })
+}
+
+/// POST /rider/register — record a device public key, return a pseudonym.
+async fn register_rider_handler(
+    State(state): State<AppState>,
+    Json(body): Json<RegisterRider>,
+) -> Result<Json<RegisterRiderResponse>, AppError> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let raw = STANDARD
+        .decode(&body.pubkey_b64)
+        .map_err(|_| AppError::BadRequest("pubkey_b64 must be base64".into()))?;
+    if raw.len() != 32 {
+        return Err(AppError::BadRequest(
+            "pubkey must be a 32-byte Ed25519 public key".into(),
+        ));
+    }
+    if let Some(ua) = body.recipient_ua.as_deref() {
+        validate_ua(ua)?;
+    }
+
+    let now = now_secs();
+    let conn = state.db.lock().unwrap();
+
+    // Idempotent: re-registering the same key returns the same rider id,
+    // so an app reinstall with a retained keychain keeps its identity.
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT rider_id FROM riders WHERE pubkey_b64 = ?1",
+            params![body.pubkey_b64],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+
+    let rider_id = match existing {
+        Some(id) => {
+            conn.execute(
+                "UPDATE riders SET last_seen_at = ?1 WHERE rider_id = ?2",
+                params![now as i64, id],
+            )
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+            id
+        }
+        None => {
+            let id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO riders
+                    (rider_id, pubkey_b64, recipient_ua, created_at, last_seen_at, revoked)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 0)",
+                params![id, body.pubkey_b64, body.recipient_ua, now as i64, now as i64],
+            )
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+            tracing::info!(rider_id = %id, "new rider device registered");
+            id
+        }
+    };
+
+    Ok(Json(RegisterRiderResponse {
+        rider_id,
+        pubkey_b64: body.pubkey_b64,
+    }))
 }
 
 fn insert_claim(conn: &Connection, c: &ClaimRow) -> Result<(), rusqlite::Error> {
@@ -628,6 +809,65 @@ async fn post_claim(
         return Err(AppError::BadRequest("signature is required".into()));
     }
 
+    // --- CLAIM SIGNATURE VERIFICATION (security v0.7) --------------------
+    // A registered device signs the canonical claim message with a key
+    // held in the phone's Secure-Enclave-protected keychain. Verified
+    // here, this is what makes the endpoint non-forgeable: an attacker
+    // with curl has no registered key and cannot produce a signature.
+    //
+    // ROLLOUT: while PEDALSHIELD_REQUIRE_SIGNED_CLAIMS=0 (default during
+    // the transition) unsigned legacy claims are accepted but logged, so
+    // installed app builds keep working. Flip to 1 once riders are on a
+    // signing build — that is the moment forgery actually dies.
+    match (&body.rider_id, body.signed_at) {
+        (Some(rider_id), Some(signed_at)) => {
+            let now = now_secs();
+            let skew = now.abs_diff(signed_at);
+            if skew > state.claim_signature_max_age_s {
+                return Err(AppError::BadRequest(format!(
+                    "claim signature is stale ({}s old, max {}s)",
+                    skew, state.claim_signature_max_age_s
+                )));
+            }
+            let pubkey = {
+                let conn = state.db.lock().unwrap();
+                rider_pubkey(&conn, rider_id)
+                    .map_err(|e| AppError::Internal(format!("db: {e}")))?
+            };
+            let pubkey = pubkey.ok_or_else(|| {
+                AppError::BadRequest("unknown or revoked rider_id".into())
+            })?;
+            let msg = claim_signing_message(
+                &body.claim_id,
+                &body.recipient_ua,
+                body.distance_meters,
+                signed_at,
+            );
+            if let Err(why) =
+                verify_claim_signature(&pubkey, &body.signature, &msg)
+            {
+                tracing::warn!(rider_id = %rider_id, %why, "claim signature REJECTED");
+                return Err(AppError::BadRequest(format!(
+                    "claim signature invalid: {why}"
+                )));
+            }
+        }
+        _ => {
+            if state.require_signed_claims {
+                return Err(AppError::BadRequest(
+                    "this endpoint requires a signed claim (rider_id + signed_at); \
+                     update the Pedalshield app"
+                        .into(),
+                ));
+            }
+            tracing::warn!(
+                ua = %body.recipient_ua,
+                "UNSIGNED claim accepted (legacy grace mode) — enable \
+                 PEDALSHIELD_REQUIRE_SIGNED_CLAIMS once riders are updated"
+            );
+        }
+    }
+
     // --- SPEND LIMITS (security v0.6) ------------------------------------
     // Enforced server-side, from our own ledger, before a claim is ever
     // queued for payout. These bound the treasury's exposure while claim
@@ -696,6 +936,8 @@ async fn post_claim(
         recipient_ua: body.recipient_ua,
         distance_meters: body.distance_meters,
         signature: body.signature,
+        rider_id: body.rider_id,
+        signed_at: body.signed_at,
         attestation: body.attestation,
         status: "pending".into(),
         payout_txid: None,
@@ -1838,6 +2080,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ~200 km/day of rewards, 10 minutes minimum between claims.
     let min_claim_interval_s: u64 = env::var("PEDALSHIELD_MIN_CLAIM_INTERVAL_S")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(600);
+    // Security v0.7: leave OFF during rollout so installed builds keep
+    // working; flip to 1 once riders are on a claim-signing app build.
+    let require_signed_claims: bool = env::var("PEDALSHIELD_REQUIRE_SIGNED_CLAIMS")
+        .map(|v| v != "0").unwrap_or(false);
+    let claim_signature_max_age_s: u64 = env::var("PEDALSHIELD_CLAIM_SIG_MAX_AGE_S")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(3600);
     let ua_daily_meters: u64 = env::var("PEDALSHIELD_UA_DAILY_METERS")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(40_000);
     let global_daily_meters: u64 = env::var("PEDALSHIELD_GLOBAL_DAILY_METERS")
@@ -1881,6 +2129,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         zat_per_km,
         max_payout_zat,
         min_claim_interval_s,
+        require_signed_claims,
+        claim_signature_max_age_s,
         ua_daily_meters,
         global_daily_meters,
         payout_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -1925,6 +2175,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/healthz", get(healthz))
         .route("/treasury/info", get(treasury_info))
         .route("/claim", post(post_claim))
+        .route("/rider/register", post(register_rider_handler))
         .route("/claims/:id", get(get_claim_handler))
         .route("/balance/:ua", get(balance_handler))
         .route("/leaderboard", get(leaderboard_handler))
