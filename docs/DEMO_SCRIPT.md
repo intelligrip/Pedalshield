@@ -1,4 +1,4 @@
-# Pedalshield — demo video script
+ # Pedalshield — demo video script
 
 Target length: **3:30 to 4:30**. Hackathon rules ask for a short walkthrough; we leave headroom and stay under 5 minutes. Shoot vertical-friendly so we can also clip a 60-second teaser for socials.
 

@@ -71,6 +71,11 @@ struct AppState {
     zat_per_km: u64,
     /// Hard cap on any single payout, in zatoshi.
     max_payout_zat: u64,
+    /// Spend limits (security v0.6) — server-side ceilings that bound
+    /// treasury loss while claim signatures are unverified. See post_claim.
+    min_claim_interval_s: u64,
+    ua_daily_meters: u64,
+    global_daily_meters: u64,
     /// Serializes payouts so two claims never try to spend the same note
     /// before the first has been mined.
     payout_lock: Arc<tokio::sync::Mutex<()>>,
@@ -333,6 +338,54 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     Ok(conn)
 }
 
+/// Distance already claimed in a rolling window, in metres.
+///
+/// SPEND LIMITS (security v0.6). Claim signatures are not yet verified
+/// (`post_claim`), so ANY caller can POST a claim. Until claim signing +
+/// App Attest land, these server-side ceilings are what actually bounds
+/// the treasury's loss: they are enforced on the server, from the
+/// server's own ledger, and no client assertion can raise them.
+///
+/// `ua_filter = Some(ua)` scopes the window to one recipient; `None`
+/// totals every claim (the global budget).
+fn claimed_meters_since(
+    conn: &Connection,
+    since_secs: u64,
+    ua_filter: Option<&str>,
+) -> Result<u64, rusqlite::Error> {
+    let sum: Option<i64> = match ua_filter {
+        Some(ua) => conn.query_row(
+            "SELECT SUM(distance_meters) FROM claims
+             WHERE created_at >= ?1 AND recipient_ua = ?2
+               AND status IN ('pending','paying','paid')",
+            params![since_secs as i64, ua],
+            |r| r.get(0),
+        )?,
+        None => conn.query_row(
+            "SELECT SUM(distance_meters) FROM claims
+             WHERE created_at >= ?1
+               AND status IN ('pending','paying','paid')",
+            params![since_secs as i64],
+            |r| r.get(0),
+        )?,
+    };
+    Ok(sum.unwrap_or(0).max(0) as u64)
+}
+
+/// Seconds since this recipient's most recent claim, or None if first.
+fn secs_since_last_claim(
+    conn: &Connection,
+    ua: &str,
+    now: u64,
+) -> Result<Option<u64>, rusqlite::Error> {
+    let last: Option<i64> = conn.query_row(
+        "SELECT MAX(created_at) FROM claims WHERE recipient_ua = ?1",
+        params![ua],
+        |r| r.get(0),
+    )?;
+    Ok(last.map(|t| now.saturating_sub(t.max(0) as u64)))
+}
+
 fn insert_claim(conn: &Connection, c: &ClaimRow) -> Result<(), rusqlite::Error> {
     conn.execute(
         "INSERT INTO claims
@@ -573,6 +626,59 @@ async fn post_claim(
     validate_distance(body.distance_meters)?;
     if body.signature.is_empty() {
         return Err(AppError::BadRequest("signature is required".into()));
+    }
+
+    // --- SPEND LIMITS (security v0.6) ------------------------------------
+    // Enforced server-side, from our own ledger, before a claim is ever
+    // queued for payout. These bound the treasury's exposure while claim
+    // signatures remain unverified: a forged claim can at worst consume
+    // one rider's daily allowance, and the global budget caps total daily
+    // loss no matter how many identities an attacker invents.
+    {
+        let now = now_secs();
+        let day_ago = now.saturating_sub(24 * 60 * 60);
+        let conn = state.db.lock().unwrap();
+
+        // 1. Per-rider cooldown: real rides take time; back-to-back claims
+        //    from one address are either a retry (idempotent, handled by
+        //    the claim_id primary key) or abuse.
+        if let Some(elapsed) =
+            secs_since_last_claim(&conn, &body.recipient_ua, now)
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?
+        {
+            if elapsed < state.min_claim_interval_s {
+                return Err(AppError::BadRequest(format!(
+                    "too soon: {}s since your last claim, minimum is {}s",
+                    elapsed, state.min_claim_interval_s
+                )));
+            }
+        }
+
+        // 2. Per-rider daily distance allowance.
+        let ua_today =
+            claimed_meters_since(&conn, day_ago, Some(&body.recipient_ua))
+                .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+        if ua_today + body.distance_meters > state.ua_daily_meters {
+            return Err(AppError::BadRequest(format!(
+                "daily limit reached for this address ({} m of {} m in 24h)",
+                ua_today, state.ua_daily_meters
+            )));
+        }
+
+        // 3. Global daily budget — the treasury's hard ceiling.
+        let all_today = claimed_meters_since(&conn, day_ago, None)
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+        if all_today + body.distance_meters > state.global_daily_meters {
+            tracing::warn!(
+                claimed_m = all_today,
+                budget_m = state.global_daily_meters,
+                "GLOBAL DAILY BUDGET reached — refusing further claims"
+            );
+            return Err(AppError::BadRequest(
+                "the treasury's daily budget is exhausted; try again tomorrow"
+                    .into(),
+            ));
+        }
     }
 
     // Use the client-supplied claim_id as the primary key so retries
@@ -1725,7 +1831,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let max_payout_zat: u64 = env::var("PEDALSHIELD_MAX_PAYOUT_ZAT")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(500_000); // 0.005 ZEC cap per claim
+        .unwrap_or(500_000);
+
+    // --- Spend limits (security v0.6) ---------------------------------
+    // Conservative defaults: one rider ~40 km/day, whole treasury
+    // ~200 km/day of rewards, 10 minutes minimum between claims.
+    let min_claim_interval_s: u64 = env::var("PEDALSHIELD_MIN_CLAIM_INTERVAL_S")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(600);
+    let ua_daily_meters: u64 = env::var("PEDALSHIELD_UA_DAILY_METERS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(40_000);
+    let global_daily_meters: u64 = env::var("PEDALSHIELD_GLOBAL_DAILY_METERS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(200_000); // 0.005 ZEC cap per claim
     // Auto-payout defaults ON (fully hands-off). Set PEDALSHIELD_AUTO_PAYOUT=0
     // to require the manual /approve endpoint instead.
     let auto_payout = env::var("PEDALSHIELD_AUTO_PAYOUT")
@@ -1764,6 +1880,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         birthday,
         zat_per_km,
         max_payout_zat,
+        min_claim_interval_s,
+        ua_daily_meters,
+        global_daily_meters,
         payout_lock: Arc::new(tokio::sync::Mutex::new(())),
         auto_payout,
         accrual_mode,
