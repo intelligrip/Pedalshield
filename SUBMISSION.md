@@ -32,11 +32,12 @@ The full loop runs end-to-end on a **deployed, internet-facing backend**:
 
 - **Live backend:** `https://api.pedalshield.app/healthz` returns `{"ok":true,...}`.
 - **Reproducible mainnet payouts (real txids):**
+  - `fbf4e134cd74b635c598d869f1cafffd902f649fac44cfb6ef534e8e01d16ed8` — **paid through the Ironwood (NU6.3) hard fork on activation day** (July 29, 2026): a v6 cross-pool migration spend (legacy Orchard in, Ironwood out), 1.55 mi verified on-device, autonomous.
   - `7bb0309585171f6ff977357f991fbbd98668793dc0ef6effdc300d1c230c3595` — the payout **shown in the demo video** (July 10, 2026): 0.83 mi verified on-device, paid at the EPA carbon rate, no human in the loop.
   - `b34883138d8b7742ea24c645c2940e616226f9527897dcd8343f7a1550ec9941` — same-day repeat (2.36 km, 24,964 zatoshi).
   - `a64f2b159e92558b7070d25f0f708ca99b3401ed9ae23ac626c2ea2a2db2f1d8` — a payout from the **deployed** system, triggered by a verified ride.
   - `2a849aca…b264ab`, `f1a3bacc…c10ba6`, `ef0e2a57…060587` — earlier autonomous Orchard payouts.
-- **NU6.2-current:** the entire stack was re-pinned within days of the June 2026 emergency upgrade; the live consensus branch id is `0x5437f330`.
+- **Upgrade-resilient:** two consensus upgrades survived in one summer — NU6.2 (June emergency Orchard fix) and **NU6.3 / Ironwood (July 29)**, which changed how payments may be constructed (legacy Orchard bundles became change-only). The treasury was re-pinned to `zcash_protocol 0.10` / `orchard 0.15` and switched to Ironwood-pool outputs the same day; live branch id is now `0x37a5165b`.
 - **Secured:** operator endpoints (`/approve`, `/claims`, `/withdraw`, `/settle`, `/admin`) are gated behind a bearer token; they fail closed.
 
 Look up any txid at `mainnet.zcashexplorer.app/transactions/<txid>`.

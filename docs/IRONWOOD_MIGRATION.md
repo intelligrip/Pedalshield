@@ -72,3 +72,55 @@ CANNOT pay — rollback only helps before the 28th.
 - zcashd EOL July 18: ECC announcement.
 - Zakura: Valar Group / Project Tachyon release, Zcash forum thread
   "Zebra, Zakura, and the road through NU6.3".
+
+---
+
+# Postmortem — activation day (July 29, 2026)
+
+**Outcome:** payouts broke at activation and were restored the same day.
+First post-fork payout:
+[`fbf4e134…d16ed8`](https://mainnet.zcashexplorer.app/transactions/fbf4e134cd74b635c598d869f1cafffd902f649fac44cfb6ef534e8e01d16ed8)
+— a **v6 cross-pool migration spend**, autonomous, no operator.
+
+## What actually happened
+
+1. **The deploy never landed (self-inflicted, ~4h of the outage).** The
+   Phase-1 block was run on July 11 but `git pull` aborted with
+   *"Committer identity unknown"* — root had no git identity on the
+   droplet. Every later step in the same block ran against unchanged
+   source, and `cargo` "succeeded" in 0.3s by relinking the old binary.
+   Nobody checked. At activation the treasury was still NU6.2 code.
+2. **The real protocol change (would have hit us regardless).**
+   Re-pinning to `zcash_protocol 0.10` fixed the branch id but the first
+   claim then failed with `OrchardRecipient(CrossAddressDisabled)`.
+   Post-Ironwood, legacy `orchard_v3` bundles are built with
+   cross-address transfers DISABLED — every output must be
+   wallet-controlled change. **You can no longer pay a third party from
+   the legacy Orchard pool.**
+3. **The fix (spender.rs).** Supplying an `ironwood_anchor` alone is not
+   enough — `add_orchard_output` always targets the legacy builder. The
+   working shape of a migration spend is:
+   - `add_orchard_spend` — treasury notes stay in legacy Orchard;
+   - `add_ironwood_output` — the RIDER's payment (Ironwood permits
+     ordinary recipients);
+   - `add_orchard_change_output` — change stays in the LEGACY pool, which
+     keeps our existing scanner able to see the treasury balance.
+
+## Lessons (both cheap, both would have prevented the outage)
+
+- **Verify deploys landed.** `git log --oneline -1` immediately after
+  every pull, and treat a sub-second `cargo build` as a red flag, not a
+  win. Added to the Phase-1 checklist above.
+- **Set a git identity on every server** that will ever pull.
+- (Adjacent, same week) **OTA bundles ≠ build env.** `eas update`
+  publishes from the local machine, where `eas.json` build-time env vars
+  do NOT apply — a dev backend URL shipped to riders that way. Defaults
+  must fail safe toward production.
+
+## Still open
+
+- **Ironwood-pool scanning.** The treasury can spend legacy notes and pay
+  Ironwood outputs, but cannot yet see notes paid INTO the Ironwood pool.
+  Required before the treasury is ever topped up with Ironwood funds, and
+  before change is allowed to land there.
+- **~8 claims** queued during the outage need replay via `/approve`.
