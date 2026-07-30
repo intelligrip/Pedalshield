@@ -25,7 +25,7 @@
         "UIBackgroundModes": [
           "location"
         ],
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Pedalshield tracks your ride with the screen off. All processing stays on-device \u2014 your route never leaves the phone."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Pedalshield tracks your ride with the screen off. All processing stays on-device — your route never leaves the phone."
       }
     },
     "android": {
@@ -56,9 +56,10 @@
         "expo-location",
         {
           "isIosBackgroundLocationEnabled": true,
-          "locationAlwaysAndWhenInUsePermission": "Pedalshield tracks your ride with the screen off. All processing stays on-device \u2014 your route never leaves the phone."
+          "locationAlwaysAndWhenInUsePermission": "Pedalshield tracks your ride with the screen off. All processing stays on-device — your route never leaves the phone."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "runtimeVersion": {
       "policy": "appVersion"
