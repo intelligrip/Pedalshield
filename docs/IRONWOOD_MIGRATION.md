@@ -117,6 +117,25 @@ First post-fork payout:
   do NOT apply — a dev backend URL shipped to riders that way. Defaults
   must fail safe toward production.
 
+## Follow-on bug found while clearing the backlog (July 30)
+
+Nine claims would not replay: `/approve` returned *"not in `pending`
+state"*. They were stuck in **`paying`** — the status a claim takes while
+the treasury scans + proves + broadcasts (~4 min). Restarting the backend
+inside that window strands the row permanently:
+
+- `/approve` refuses it (only acts on `pending`),
+- the app's retry button hits the same wall,
+- the rider is silently owed money with no recovery path.
+
+With one rider that is an annoyance; with fifty it is unnoticed debt.
+
+**Fix (backend):** on startup, revert every `paying` row to `pending`.
+Nothing can legitimately be mid-payout at boot — we are the only payer
+and we just started — so any such row is by definition abandoned. Logged
+with a count so recoveries are visible. Cleared the existing stuck row by
+hand via sqlite.
+
 ## Still open
 
 - **Ironwood-pool scanning.** The treasury can spend legacy notes and pay

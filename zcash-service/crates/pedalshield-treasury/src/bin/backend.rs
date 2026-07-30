@@ -370,6 +370,32 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     // ALTER TABLE ADD COLUMN errors if the column exists; ignore that.
     let _ = conn.execute("ALTER TABLE claims ADD COLUMN rider_id TEXT", []);
     let _ = conn.execute("ALTER TABLE claims ADD COLUMN signed_at INTEGER", []);
+
+    // --- Crash recovery: un-stick claims abandoned mid-payout ----------
+    // A claim moves pending -> paying before the (slow) scan + prove +
+    // broadcast. If the process dies in that window — deploy, restart,
+    // OOM, upgrade — the row stays `paying` forever: /approve refuses it
+    // (not pending), the app's retry hits the same wall, and the rider is
+    // silently owed money with no path to recovery. Found the hard way
+    // during the Ironwood migration, where a restart stranded a claim.
+    //
+    // On startup nothing can legitimately be mid-payout (we are the only
+    // payer and we just booted), so any `paying` row is by definition
+    // abandoned: revert it to `pending` and let the normal path retry.
+    match conn.execute(
+        "UPDATE claims SET status = 'pending', updated_at = ?1,
+             rejection_reason = 'auto-recovered: payout abandoned at restart'
+         WHERE status = 'paying'",
+        params![now_secs() as i64],
+    ) {
+        Ok(0) => {}
+        Ok(n) => tracing::warn!(
+            recovered = n,
+            "startup recovery: reverted abandoned 'paying' claims to pending"
+        ),
+        Err(e) => tracing::error!(error = %e, "startup recovery failed"),
+    }
+
     Ok(conn)
 }
 
