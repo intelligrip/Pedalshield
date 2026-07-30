@@ -111,6 +111,20 @@ export interface RideFeatures {
   movingTimeS: number;
   /** diagonal of the ride's bounding box, km — jitter never leaves the box */
   bboxDiagonalKm: number;
+  /**
+   * Correlation (-1..1) between GPS-derived turn rate and gyroscope
+   * activity, over time windows. Real riding rotates the phone when the
+   * bike turns; a replayed track paired with an idle or randomly shaken
+   * phone does not. NaN when there is insufficient signal to judge —
+   * treat NaN as "no evidence", never as guilt.
+   */
+  leanTurnCoupling: number;
+  /**
+   * Correlation (-1..1) between GPS speed and accelerometer road buzz.
+   * Real vibration scales with speed and dies at stops; constant-amplitude
+   * shaking does not. NaN when insufficient signal.
+   */
+  vibrationSpeedCoupling: number;
 }
 
 export type FlagCode =
@@ -126,7 +140,8 @@ export type FlagCode =
   | 'NO_MOTION_DATA'
   | 'GPS_SYNTHETIC'
   | 'RIDE_TOO_SHORT'
-  | 'STATIONARY';
+  | 'STATIONARY'
+  | 'SENSOR_INCOHERENT';
 
 export interface VerificationFlag {
   code: FlagCode;
