@@ -13,8 +13,13 @@ export interface ClaimSubmission {
   claim_id: string;
   recipient_ua: string;
   distance_meters: number;
+  /** Base64 Ed25519 signature over the canonical claim message. */
   signature: string;
   attestation?: string;
+  /** Security v0.7: pseudonymous device id from POST /rider/register. */
+  rider_id?: string;
+  /** Unix seconds the claim was signed (backend enforces a max age). */
+  signed_at?: number;
 }
 
 export interface ClaimAck {

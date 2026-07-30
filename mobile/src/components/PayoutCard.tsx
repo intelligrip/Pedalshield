@@ -30,6 +30,7 @@ import {
 } from '../lib/config.ts';
 import { validateZcashUA } from '../wallet/connectedWallet.ts';
 import { updateRideTxid } from '../ride/rideHistory.ts';
+import { signClaim } from '../wallet/deviceIdentity.ts';
 
 type Phase = 'idle' | 'submitting' | 'polling' | 'paid' | 'accrued' | 'error';
 
@@ -211,11 +212,21 @@ export function PayoutCard({
     // Fire-and-forget: resolves the ZEC amount for display + history.
     const amountPromise = resolveAmount();
     try {
+      // Security v0.7: sign the claim with this device's Keychain-held
+      // key so the backend can prove it came from a registered app, not
+      // from curl. Falls back to the legacy unsigned shape if signing is
+      // unavailable (older client, missing native module) — the backend
+      // accepts that until PEDALSHIELD_REQUIRE_SIGNED_CLAIMS is enabled.
+      const meters = Math.max(1, Math.round(distanceM));
+      const signed = await signClaim(rideId, recip, meters);
       const ack = await submitClaim({
         claim_id: rideId,
         recipient_ua: recip,
-        distance_meters: Math.max(1, Math.round(distanceM)),
-        signature: 'demo-sig',
+        distance_meters: meters,
+        signature: signed?.signature ?? 'demo-sig',
+        ...(signed
+          ? { rider_id: signed.rider_id, signed_at: signed.signed_at }
+          : {}),
       });
       if (ack.status === 'accrued') {
         // Accrual mode: no per-ride on-chain payout. Show balance + option to force settle.
