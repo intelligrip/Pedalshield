@@ -26,6 +26,7 @@
  */
 
 import { BACKEND_URL } from '../lib/config.ts';
+import { ensureAttestation } from './appAttest.ts';
 
 declare const require: (m: string) => any;
 
@@ -167,6 +168,11 @@ export async function ensureDeviceIdentity(): Promise<DeviceIdentity | null> {
       await SecureStore.setItemAsync(KEY_RIDER_ID, riderId, STORE_OPTS);
     }
     _cached = { riderId, publicKeyB64 };
+    // Hardware attestation (Tier 0) rides along, fire-and-forget. It must
+    // never delay or fail identity: a rider with no attestation still earns
+    // exactly as before. Phase A is collecting real samples; enforcement
+    // happens server-side once the verifier exists.
+    void ensureAttestation(riderId).catch(() => {});
     return _cached;
   } catch {
     return null; // never block a payout on signing infrastructure

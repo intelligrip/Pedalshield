@@ -358,6 +358,61 @@ CREATE TABLE IF NOT EXISTS coop_contributions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_coop_created ON coop_contributions(created_at);
+
+-- Small key/value store for wallet scan state.
+--
+-- Today it holds exactly one key, 'scan_from_height': the block height the
+-- next payout scan may safely start from, instead of the treasury birthday.
+-- Payouts used to stream every block from the birthday to the tip (~68k
+-- blocks and climbing by ~1150/day), which was the whole of the multi-minute
+-- payout latency.
+--
+-- This is a CACHE, never an authority on funds: if a scan from the watermark
+-- finds no spendable note, the spender silently rescans from the birthday.
+-- Deleting this row is therefore always safe and just costs one slow payout.
+CREATE TABLE IF NOT EXISTS wallet_state (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+-- App Attest, Tier 0 (security v0.8). See docs/ANTI_CHEAT_THREAT_MODEL.md.
+--
+-- One-time challenges. The challenge is what makes an attestation
+-- unreplayable: generated here, bound into the signed object by Apple, and
+-- accepted exactly once. Rows are consumed on use and swept by age.
+CREATE TABLE IF NOT EXISTS attest_challenges (
+    challenge   TEXT PRIMARY KEY,
+    rider_id    TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    used_at     INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_attest_challenges_created
+    ON attest_challenges(created_at);
+
+-- Device attestations. PHASE A stores the raw object without verifying it,
+-- so the verifier can be written and tested against real hardware output
+-- instead of against a reading of Apple's spec. `verified` therefore stays
+-- 0 until phase B lands; nothing may treat a row here as proof of
+-- integrity while verified = 0.
+--
+-- public_key_b64 and sign_count are populated by the phase B verifier:
+-- the P-256 key extracted from the attestation certificate, and Apple's
+-- monotonic assertion counter used to reject replays.
+CREATE TABLE IF NOT EXISTS rider_attestations (
+    rider_id        TEXT PRIMARY KEY,
+    key_id          TEXT NOT NULL,
+    platform        TEXT NOT NULL,
+    challenge       TEXT NOT NULL,
+    attestation_b64 TEXT NOT NULL,
+    public_key_b64  TEXT,
+    sign_count      INTEGER NOT NULL DEFAULT 0,
+    verified        INTEGER NOT NULL DEFAULT 0,
+    reject_reason   TEXT,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
 ";
 
 fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
@@ -394,6 +449,16 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
             "startup recovery: reverted abandoned 'paying' claims to pending"
         ),
         Err(e) => tracing::error!(error = %e, "startup recovery failed"),
+    }
+
+    // --- Operator escape hatch: force an exhaustive scan ---------------
+    // The scan watermark assumes the treasury only ever gains funds from
+    // its own change outputs. Topping it up from an external wallet breaks
+    // that assumption if the new note lands below the watermark. The
+    // spender's fallback would catch it anyway, but this makes the intent
+    // explicit and the first payout after a top-up predictable.
+    if env::var("PEDALSHIELD_FULL_RESCAN").ok().as_deref() == Some("1") {
+        clear_scan_from(&conn);
     }
 
     Ok(conn)
@@ -530,6 +595,185 @@ fn rider_pubkey(
         Some(r) => Some(r.get(0)?),
         None => None,
     })
+}
+
+// --- App Attest (Tier 0, security v0.8) -------------------------------
+//
+// PHASE A ONLY. These endpoints issue challenges and record attestation
+// objects; they do NOT verify them. Verification (CBOR decode, X.509 chain
+// to Apple's App Attest root, nonce binding, App ID hash, key identifier
+// match) lands in phase B, written against the real objects this phase
+// collects. Until then `verified` stays 0 and nothing downstream may treat
+// an attestation as evidence of anything.
+
+/// How long a challenge stays usable. Short enough that a captured
+/// challenge is worthless quickly, long enough to survive a slow network
+/// and Apple's own attestation round-trip.
+const ATTEST_CHALLENGE_TTL_S: u64 = 300;
+
+#[derive(Deserialize)]
+struct ChallengeQuery {
+    rider_id: String,
+}
+
+#[derive(Serialize)]
+struct ChallengeResponse {
+    challenge: String,
+    expires_in_s: u64,
+}
+
+/// GET /attest/challenge?rider_id=… — issue a one-time nonce.
+///
+/// 32 bytes from the OS CSPRNG. Apple requires at least 16; guessing must
+/// be infeasible because the challenge is the only thing preventing an
+/// attacker from replaying an attestation captured from a genuine device.
+async fn attest_challenge_handler(
+    State(state): State<AppState>,
+    Query(q): Query<ChallengeQuery>,
+) -> Result<Json<ChallengeResponse>, AppError> {
+    use rand::{rngs::OsRng, RngCore};
+
+    let now = now_secs();
+    let mut raw = [0u8; 32];
+    OsRng.fill_bytes(&mut raw);
+    let challenge = hex::encode(raw);
+
+    let conn = state.db.lock().unwrap();
+    // Opportunistic sweep: challenges are single-use and short-lived, so
+    // expired rows are pure garbage. Cheap here, avoids a background task.
+    let _ = conn.execute(
+        "DELETE FROM attest_challenges WHERE created_at < ?1",
+        params![(now.saturating_sub(ATTEST_CHALLENGE_TTL_S * 4)) as i64],
+    );
+    conn.execute(
+        "INSERT INTO attest_challenges (challenge, rider_id, created_at)
+         VALUES (?1, ?2, ?3)",
+        params![challenge, q.rider_id, now as i64],
+    )
+    .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+
+    Ok(Json(ChallengeResponse {
+        challenge,
+        expires_in_s: ATTEST_CHALLENGE_TTL_S,
+    }))
+}
+
+#[derive(Deserialize)]
+struct AttestBody {
+    rider_id: String,
+    key_id: String,
+    challenge: String,
+    attestation: String,
+    platform: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AttestResponse {
+    stored: bool,
+    verified: bool,
+    /// Honest signal to the client: phase A records without verifying.
+    note: &'static str,
+}
+
+/// POST /rider/attest — record a device attestation object.
+///
+/// The challenge IS enforced even in phase A: it must exist, belong to
+/// this rider, be unexpired, and be unused. That costs nothing now and
+/// means the samples we collect are genuine round-trips rather than
+/// anything a client felt like posting.
+async fn attest_register_handler(
+    State(state): State<AppState>,
+    Json(body): Json<AttestBody>,
+) -> Result<Json<AttestResponse>, AppError> {
+    if body.attestation.is_empty() || body.key_id.is_empty() {
+        return Err(AppError::BadRequest("key_id and attestation required".into()));
+    }
+    // Bound the stored blob. Real attestation objects are a few KB; this
+    // rejects anything trying to use the table as free storage.
+    if body.attestation.len() > 32 * 1024 {
+        return Err(AppError::BadRequest("attestation too large".into()));
+    }
+
+    let now = now_secs();
+    let conn = state.db.lock().unwrap();
+
+    // Rider must exist — attestation binds to a registered device identity.
+    let known: Option<String> = conn
+        .query_row(
+            "SELECT rider_id FROM riders WHERE rider_id = ?1 AND revoked = 0",
+            params![body.rider_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+    if known.is_none() {
+        return Err(AppError::BadRequest("unknown rider_id".into()));
+    }
+
+    // Consume the challenge: must match this rider, be fresh, be unused.
+    let row: Option<(String, i64, Option<i64>)> = conn
+        .query_row(
+            "SELECT rider_id, created_at, used_at FROM attest_challenges
+             WHERE challenge = ?1",
+            params![body.challenge],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+
+    let (chal_rider, created_at, used_at) =
+        row.ok_or_else(|| AppError::BadRequest("unknown challenge".into()))?;
+    if chal_rider != body.rider_id {
+        return Err(AppError::BadRequest("challenge belongs to another rider".into()));
+    }
+    if used_at.is_some() {
+        return Err(AppError::BadRequest("challenge already used".into()));
+    }
+    if now.saturating_sub(created_at as u64) > ATTEST_CHALLENGE_TTL_S {
+        return Err(AppError::BadRequest("challenge expired".into()));
+    }
+    conn.execute(
+        "UPDATE attest_challenges SET used_at = ?1 WHERE challenge = ?2",
+        params![now as i64, body.challenge],
+    )
+    .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+
+    let platform = body.platform.unwrap_or_else(|| "ios".to_string());
+    conn.execute(
+        "INSERT INTO rider_attestations
+            (rider_id, key_id, platform, challenge, attestation_b64,
+             verified, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?6)
+         ON CONFLICT(rider_id) DO UPDATE SET
+             key_id          = excluded.key_id,
+             platform        = excluded.platform,
+             challenge       = excluded.challenge,
+             attestation_b64 = excluded.attestation_b64,
+             verified        = 0,
+             reject_reason   = NULL,
+             updated_at      = excluded.updated_at",
+        params![
+            body.rider_id,
+            body.key_id,
+            platform,
+            body.challenge,
+            body.attestation,
+            now as i64
+        ],
+    )
+    .map_err(|e| AppError::Internal(format!("db: {e}")))?;
+
+    tracing::info!(
+        rider_id = %body.rider_id,
+        bytes = body.attestation.len(),
+        "attestation recorded (phase A: stored, NOT verified)"
+    );
+
+    Ok(Json(AttestResponse {
+        stored: true,
+        verified: false,
+        note: "phase A: attestation stored but not yet verified",
+    }))
 }
 
 /// POST /rider/register — record a device public key, return a pseudonym.
@@ -741,6 +985,68 @@ fn revert_to_pending(conn: &Connection, id: &str, reason: &str) -> Result<(), ru
         params![reason, now, id],
     )?;
     Ok(())
+}
+
+// --- wallet scan watermark -------------------------------------------
+//
+// See the `wallet_state` table comment in SCHEMA. The watermark makes
+// payouts fast; the spender's automatic fallback to the birthday is what
+// makes them correct. Nothing here is allowed to fail a payout: every
+// read defaults to the birthday, and a failed write is logged, not
+// propagated — a stale watermark costs one slow scan, while a payout that
+// errors out costs a rider their money.
+
+/// Blocks of slack between the tip at broadcast time and the watermark we
+/// persist. Covers reorgs and guarantees the window still contains the
+/// block our own change note lands in.
+const WATERMARK_REORG_MARGIN: u64 = 100;
+
+/// Height the next payout scan may start from. Falls back to `birthday`
+/// when unset, unparseable, or below the birthday.
+fn get_scan_from(conn: &Connection, birthday: u64) -> u64 {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT value FROM wallet_state WHERE key = 'scan_from_height'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap_or(None);
+    stored
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .map(|h| h.max(birthday))
+        .unwrap_or(birthday)
+}
+
+/// Advance the watermark after a successful broadcast. Monotonic: a lower
+/// value is ignored, so an out-of-order or stale update can never drag the
+/// window backwards past funds we already accounted for.
+fn set_scan_from(conn: &Connection, height: u64) {
+    let now = now_secs() as i64;
+    let res = conn.execute(
+        "INSERT INTO wallet_state (key, value, updated_at)
+         VALUES ('scan_from_height', ?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             updated_at = excluded.updated_at
+         WHERE CAST(excluded.value AS INTEGER) > CAST(wallet_state.value AS INTEGER)",
+        params![height.to_string(), now],
+    );
+    if let Err(e) = res {
+        tracing::warn!(error = %e, height, "could not persist scan watermark (payout unaffected)");
+    }
+}
+
+/// Drop the watermark so the next payout scans from the birthday. Called
+/// on startup when PEDALSHIELD_FULL_RESCAN=1 — the operator's escape
+/// hatch after topping up the treasury from an external wallet, where the
+/// new note may sit below the current watermark.
+fn clear_scan_from(conn: &Connection) {
+    match conn.execute("DELETE FROM wallet_state WHERE key = 'scan_from_height'", []) {
+        Ok(n) if n > 0 => tracing::info!("PEDALSHIELD_FULL_RESCAN=1: scan watermark cleared"),
+        Ok(_) => tracing::info!("PEDALSHIELD_FULL_RESCAN=1: no watermark was set"),
+        Err(e) => tracing::warn!(error = %e, "could not clear scan watermark"),
+    }
 }
 
 fn count_pending(conn: &Connection) -> Result<u64, rusqlite::Error> {
@@ -1486,6 +1792,11 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
         }
     };
 
+    let scan_from = {
+        let conn = state.db.lock().unwrap();
+        get_scan_from(&conn, state.birthday)
+    };
+
     // Serialize payouts so concurrent claims can't pick the same note.
     let result = {
         let _guard = state.payout_lock.lock().await;
@@ -1495,6 +1806,7 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
             &claim.recipient_ua,
             amount_zat,
             state.birthday,
+            scan_from,
             true, // broadcast
         )
         .await
@@ -1506,7 +1818,18 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
                 let conn = state.db.lock().unwrap();
                 set_paid_from_paying(&conn, &id, &r.txid_hex)
                     .map_err(|e| PayoutError::Internal(format!("db: {e}")))?;
-                tracing::info!(claim_id = %id, txid = %r.txid_hex, amount = amount_zat, "claim paid autonomously");
+                // Only advance on a CONFIRMED-ACCEPTED broadcast. Our change
+                // note is created by this tx, so tip-at-build minus the reorg
+                // margin is guaranteed to still contain it.
+                set_scan_from(&conn, r.tip_height.saturating_sub(WATERMARK_REORG_MARGIN));
+                if r.full_rescan_used {
+                    tracing::warn!(
+                        claim_id = %id,
+                        scanned_from = r.scanned_from,
+                        "payout needed a full rescan; watermark was stale"
+                    );
+                }
+                tracing::info!(claim_id = %id, txid = %r.txid_hex, amount = amount_zat, scanned_from = r.scanned_from, "claim paid autonomously");
                 Ok(PayoutOutcome { amount_zat, txid: r.txid_hex })
             }
             Some((code, msg)) => {
@@ -1619,6 +1942,11 @@ async fn settle_one(
         }
     };
 
+    let scan_from = {
+        let conn = state.db.lock().unwrap();
+        get_scan_from(&conn, state.birthday)
+    };
+
     let result = {
         let _guard = state.payout_lock.lock().await;
         pedalshield_treasury::spend::spender::pay(
@@ -1627,6 +1955,7 @@ async fn settle_one(
             recipient_ua,
             amount,
             state.birthday,
+            scan_from,
             true, // broadcast
         )
         .await
@@ -1638,7 +1967,15 @@ async fn settle_one(
             let conn = state.db.lock().unwrap();
             accrual::mark_settled(&conn, recipient_ua, amount, &r.txid_hex, now)
                 .map_err(|e| format!("db: {e}"))?;
-            tracing::info!(recipient = %recipient_ua, txid = %r.txid_hex, amount, "balance settled");
+            set_scan_from(&conn, r.tip_height.saturating_sub(WATERMARK_REORG_MARGIN));
+            if r.full_rescan_used {
+                tracing::warn!(
+                    recipient = %recipient_ua,
+                    scanned_from = r.scanned_from,
+                    "settle needed a full rescan; watermark was stale"
+                );
+            }
+            tracing::info!(recipient = %recipient_ua, txid = %r.txid_hex, amount, scanned_from = r.scanned_from, "balance settled");
             Ok(r.txid_hex)
         }
         other => {
@@ -2211,6 +2548,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/treasury/info", get(treasury_info))
         .route("/claim", post(post_claim))
         .route("/rider/register", post(register_rider_handler))
+        .route("/attest/challenge", get(attest_challenge_handler))
+        .route("/rider/attest", post(attest_register_handler))
         .route("/claims/:id", get(get_claim_handler))
         .route("/balance/:ua", get(balance_handler))
         .route("/leaderboard", get(leaderboard_handler))

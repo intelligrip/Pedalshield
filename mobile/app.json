@@ -26,6 +26,9 @@
           "location"
         ],
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Pedalshield tracks your ride with the screen off. All processing stays on-device — your route never leaves the phone."
+      },
+      "entitlements": {
+        "com.apple.developer.devicecheck.appattest-environment": "production"
       }
     },
     "android": {

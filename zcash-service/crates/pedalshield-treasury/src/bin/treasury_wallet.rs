@@ -405,7 +405,10 @@ async fn send_async(
     println!("  amount: {amt_label}");
     println!("  scanning from birthday {from_block} to tip, selecting an unspent note, proving...\n");
 
-    let r = pay(&cli.endpoint, &sk, &to, amount_zat, from_block, !dry_run).await?;
+    // CLI always does the exhaustive scan: no watermark (scan_from ==
+    // birthday). This is the manual/recovery tool — correctness and
+    // predictability matter more here than latency.
+    let r = pay(&cli.endpoint, &sk, &to, amount_zat, from_block, from_block, !dry_run).await?;
 
     println!("SIGNED v5 TRANSACTION BUILT");
     println!(

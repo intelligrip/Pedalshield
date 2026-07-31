@@ -19,7 +19,7 @@ above it:
 
 | # | Property | Question | Status |
 |---|---|---|---|
-| 0 | **Provenance** | Did this claim come from our unmodified app on real hardware? | **Partial** — claims are signed by a device key (v0.7); App Attest is NOT yet implemented |
+| 0 | **Provenance** | Did this claim come from our unmodified app on real hardware? | **Partial** — claims are signed by a device key (v0.7). App Attest is in **phase A**: the app attests and the server records, but does NOT yet verify. Treat as unproven until phase B |
 | 1 | **Physics** | Is this motion possible for a bicycle? | Shipped, v6 |
 | 2 | **Identity economics** | Is it worth inventing riders to farm this? | Server-side caps shipped; progressive trust is roadmap |
 
