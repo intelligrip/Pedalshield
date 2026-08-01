@@ -1714,6 +1714,83 @@ fn compute_payout(distance_meters: u64, zat_per_km: u64, max_payout_zat: u64) ->
     raw.min(max_payout_zat)
 }
 
+/// One-time backfill of lifetime totals for rides that were paid before
+/// `record_direct_payout` existed.
+///
+/// Auto-payout mode never wrote to `balances`, so every already-paid claim
+/// is missing from lifetime totals AND from the leaderboard, which reads
+/// the same tables. Without this, the fix only counts rides from today
+/// forward and a rider's history silently vanishes.
+///
+/// CAVEAT, deliberately logged: `claims` never stored the amount actually
+/// paid, so historical rewards are RECONSTRUCTED at the current rate. If
+/// the rate has been re-pegged since a ride, its credited value is an
+/// approximation of what was really sent on-chain. The txid in `claims` is
+/// the authoritative record; this figure is for display.
+///
+/// Idempotent: the `accruals` primary key means re-running credits nothing
+/// twice, so a restart loop cannot inflate anyone's total.
+fn backfill_lifetime_totals(conn: &Connection, zat_per_km: u64, max_payout_zat: u64) {
+    let rows: Result<Vec<(String, String, u64, Option<String>, i64)>, rusqlite::Error> = (|| {
+        let mut stmt = conn.prepare(
+            "SELECT id, recipient_ua, distance_meters, payout_txid, updated_at
+             FROM claims WHERE status = 'paid'",
+        )?;
+        let r = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get::<_, i64>(2)? as u64,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(r)
+    })();
+
+    let rows = match rows {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(error = %e, "lifetime backfill skipped (query failed)");
+            return;
+        }
+    };
+
+    let mut credited = 0usize;
+    let mut total = 0u64;
+    for (id, ua, meters, txid, updated_at) in rows {
+        let amount = compute_payout(meters, zat_per_km, max_payout_zat);
+        if amount == 0 {
+            continue;
+        }
+        match pedalshield_treasury::accrual::record_direct_payout(
+            conn,
+            &id,
+            &ua,
+            amount,
+            txid.as_deref().unwrap_or(""),
+            updated_at.max(0) as u64,
+        ) {
+            Ok(true) => {
+                credited += 1;
+                total += amount;
+            }
+            Ok(false) => {} // already counted
+            Err(e) => tracing::warn!(claim_id = %id, error = %e, "backfill row failed"),
+        }
+    }
+
+    if credited > 0 {
+        tracing::info!(
+            rides = credited,
+            zatoshi = total,
+            "lifetime backfill: credited previously-paid rides (amounts reconstructed at the CURRENT rate; txids in `claims` remain authoritative)"
+        );
+    }
+}
+
 fn load_spending_key(state: &AppState) -> Result<orchard::keys::SpendingKey, String> {
     let path = state
         .spending_key_path
@@ -1828,6 +1905,20 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
                         scanned_from = r.scanned_from,
                         "payout needed a full rescan; watermark was stale"
                     );
+                }
+                // Credit lifetime totals. Auto-payout spends immediately, so
+                // nothing else ever wrote to `balances` and the app's
+                // LIFETIME REWARDS figure read 0 after every ride. Idempotent
+                // on claim_id; failure here must never fail a paid claim.
+                if let Err(e) = pedalshield_treasury::accrual::record_direct_payout(
+                    &conn,
+                    &id,
+                    &claim.recipient_ua,
+                    amount_zat,
+                    &r.txid_hex,
+                    now_secs(),
+                ) {
+                    tracing::warn!(claim_id = %id, error = %e, "lifetime credit failed (payment stands)");
                 }
                 tracing::info!(claim_id = %id, txid = %r.txid_hex, amount = amount_zat, scanned_from = r.scanned_from, "claim paid autonomously");
                 Ok(PayoutOutcome { amount_zat, txid: r.txid_hex })
@@ -2492,6 +2583,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let conn = open_db(&db_path)?;
+    backfill_lifetime_totals(&conn, zat_per_km, max_payout_zat);
     let state = AppState {
         db: Arc::new(Mutex::new(conn)),
         treasury_ua: treasury_ua.clone(),

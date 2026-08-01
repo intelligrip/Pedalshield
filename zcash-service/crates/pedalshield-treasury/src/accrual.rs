@@ -115,6 +115,59 @@ pub fn accrue(
     Ok(true)
 }
 
+/// Record a ride that was paid on-chain IMMEDIATELY (auto-payout mode),
+/// crediting lifetime totals without ever touching `pending_zat`.
+///
+/// WHY THIS EXISTS: `balances` was only ever written by `accrue()`, which
+/// runs in accrual mode. In auto-payout mode — the mode Pedalshield
+/// actually runs in — each claim is spent on-chain the moment it verifies,
+/// so nothing wrote to `balances` at all and GET /balance/{ua} reported
+/// lifetime 0 forever. The app's headline "LIFETIME REWARDS" figure read
+/// zero after every ride.
+///
+/// `pending_zat` stays 0 on purpose: the money is already on chain, so
+/// counting it as owed would double-pay it on the next settlement sweep.
+/// Only lifetime totals and the ride count move.
+///
+/// Idempotent on `claim_id` via the `accruals` primary key, so a retried
+/// or replayed payout cannot inflate a rider's lifetime figure.
+pub fn record_direct_payout(
+    conn: &Connection,
+    claim_id: &str,
+    recipient_ua: &str,
+    amount_zat: Zatoshi,
+    txid_hex: &str,
+    now: u64,
+) -> rusqlite::Result<bool> {
+    let inserted = conn.execute(
+        "INSERT OR IGNORE INTO accruals (claim_id, recipient_ua, amount_zat, created_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![claim_id, recipient_ua, amount_zat as i64, now as i64],
+    )?;
+    if inserted == 0 {
+        return Ok(false); // already counted
+    }
+
+    conn.execute(
+        "INSERT INTO balances (recipient_ua, pending_zat, lifetime_zat, rides_count, updated_at)
+         VALUES (?1, 0, ?2, 1, ?3)
+         ON CONFLICT(recipient_ua) DO UPDATE SET
+            lifetime_zat = lifetime_zat + excluded.lifetime_zat,
+            rides_count  = rides_count  + 1,
+            updated_at   = excluded.updated_at",
+        params![recipient_ua, amount_zat as i64, now as i64],
+    )?;
+
+    // Same append-only settlement audit the accrual path writes, so both
+    // modes produce one comparable on-chain history.
+    conn.execute(
+        "INSERT INTO settlements (txid_hex, recipient_ua, amount_zat, settled_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![txid_hex, recipient_ua, amount_zat as i64, now as i64],
+    )?;
+    Ok(true)
+}
+
 /// Current pending (owed, not-yet-settling) balance for a recipient.
 pub fn pending(conn: &Connection, recipient_ua: &str) -> rusqlite::Result<Zatoshi> {
     let v: Option<i64> = conn
