@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
 import { MapPacksCard } from '../components/MapPacksCard.tsx';
 import { PrivacyCheckupCard } from '../components/PrivacyCheckupCard.tsx';
@@ -8,9 +8,10 @@ import { theme } from '../app/theme.ts';
 import { getConnectedUA, onConnectedUAChange } from '../wallet/connectedWallet.ts';
 import {
   getDataCoopPrefs,
-  isDataCoopOptedIn,
   onDataCoopChange,
-  setDataCoopOptIn,
+  setCoopLevel,
+  setSocialSharing,
+  type CoopLevel,
 } from '../prefs/dataCoop.ts';
 import { shortAddress } from '../lib/format.ts';
 import {
@@ -33,6 +34,31 @@ const WHAT_LEAVES_DEVICE = [
   'Pseudonymous account id',
 ];
 
+/**
+ * The three commercial sharing levels, in the rider's words.
+ *
+ * Each one states what actually leaves the phone. No level is presented as
+ * the "recommended" or "generous" choice: the moment an interface nudges
+ * toward sharing, consent stops being consent.
+ */
+const COOP_LEVELS: { level: CoopLevel; title: string; body: string }[] = [
+  {
+    level: 0,
+    title: 'Shielded',
+    body: 'Nothing but a signed verdict — how far you rode and that it was real. No route, no times, no patterns. This is the default.',
+  },
+  {
+    level: 1,
+    title: 'Aggregate',
+    body: 'Adds coarse signals: a distance band, the hour of day, a CO₂ estimate, your region. Still no route, and nothing that can be traced back to you.',
+  },
+  {
+    level: 2,
+    title: 'Route',
+    body: 'Adds the shape of your ride, so planners can see where bike lanes are actually needed. The start and end are always removed first.',
+  },
+];
+
 export function PrivacyDashboardScreen() {
   // Non-custodial: this is the rider's OWN connected Unified Address, not a
   // wallet we hold. Updates live when they connect/change it.
@@ -40,19 +66,14 @@ export function PrivacyDashboardScreen() {
   useEffect(() => onConnectedUAChange(setAddress), []);
   const connected = address.startsWith('u1');
 
-  // Data co-op: OFF by default. Reflects the persisted, versioned consent.
-  const [coopOptedIn, setCoopOptedIn] = useState<boolean>(isDataCoopOptedIn());
-  useEffect(
-    () => onDataCoopChange((p) => setCoopOptedIn(p.optedIn)),
-    [],
-  );
-  const consentedAt = getDataCoopPrefs().consentedAt;
-
-  const toggleCoop = (next: boolean) => {
-    // Optimistic: the store emits and re-syncs us via the subscription above.
-    setCoopOptedIn(next);
-    void setDataCoopOptIn(next);
-  };
+  // Data co-op: tiered, private by default. `level` governs COMMERCIAL
+  // sharing; `social` is a separate, unpaid consent for rider-to-rider
+  // visibility. Deliberately not one switch — see prefs/dataCoop.ts.
+  const [prefs, setPrefs] = useState(getDataCoopPrefs());
+  useEffect(() => onDataCoopChange(setPrefs), []);
+  const level = prefs.level;
+  const social = prefs.socialSharing;
+  const consentedAt = prefs.consentedAt;
 
   // Hardware attestation state. Shown because "is this device attested?" is
   // a privacy-relevant fact the rider is entitled to see — and because every
@@ -120,33 +141,81 @@ export function PrivacyDashboardScreen() {
       </Card>
 
       <Card accent>
+        <Text style={styles.sectionLabel}>DATA CO-OP · WHAT YOU SHARE</Text>
+        <Text style={styles.note}>
+          Three choices, not one switch. Shielded is the default and always
+          will be. You can change or revoke this at any time.
+        </Text>
+
+        {COOP_LEVELS.map((opt) => {
+          const active = level === opt.level;
+          return (
+            <Pressable
+              key={opt.level}
+              onPress={() => void setCoopLevel(opt.level)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: active }}
+              style={[styles.levelRow, active && styles.levelRowActive]}
+            >
+              <View style={[styles.radio, active && styles.radioOn]}>
+                {active ? <View style={styles.radioDot} /> : null}
+              </View>
+              <View style={styles.levelText}>
+                <Text style={styles.levelTitle}>{opt.title}</Text>
+                <Text style={styles.levelBody}>{opt.body}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+
+        {level >= 2 ? (
+          <Text style={styles.coopMeta}>
+            The first and last {'≈'}250 m of every ride are always removed
+            before a route is shared. That protection has no off switch —
+            it&apos;s where you live and work, not where you rode.
+          </Text>
+        ) : null}
+
+        {/* The pool. An honest zero beats a promise we can't pay. */}
+        <View style={styles.pool}>
+          <Text style={styles.poolLabel}>CO-OP POOL</Text>
+          <Text style={styles.poolBody}>
+            The co-op pays out a share of what your data is licensed for, split
+            by contributed miles. Nothing has been licensed yet, so the pool is
+            $0 today. When that changes, you&apos;ll see what it sold for and
+            what your share was.
+          </Text>
+        </View>
+
+        {consentedAt > 0 ? (
+          <Text style={styles.coopMeta}>
+            Chosen {new Date(consentedAt).toLocaleDateString()} · revoke any
+            time, and nothing further is shared.
+          </Text>
+        ) : null}
+      </Card>
+
+      <Card>
         <View style={styles.coopHeader}>
           <View style={styles.coopHeaderText}>
-            <Text style={styles.sectionLabel}>DATA CO-OP · OPT-IN</Text>
+            <Text style={styles.sectionLabel}>VISIBLE TO OTHER RIDERS</Text>
             <Text style={styles.coopState}>
-              {coopOptedIn ? 'On — you’re contributing' : 'Off — fully private'}
+              {social ? 'On — leaderboard and shared cards' : 'Off — invisible'}
             </Text>
           </View>
           <Switch
-            value={coopOptedIn}
-            onValueChange={toggleCoop}
+            value={social}
+            onValueChange={(v: boolean) => void setSocialSharing(v)}
             trackColor={{ false: theme.color.border, true: theme.color.accentSoft }}
-            thumbColor={coopOptedIn ? theme.color.accent : theme.color.textMuted}
+            thumbColor={social ? theme.color.accent : theme.color.textMuted}
             ios_backgroundColor={theme.color.border}
           />
         </View>
         <Text style={styles.note}>
-          Off by default. Turn this on to earn extra ZEC by contributing to the
-          rider data co-op. Even when it’s on, your raw route never leaves your
-          phone — only privacy-protected, aggregated signals do, and they can’t
-          be traced back to you. Turn it off any time; nothing further is shared.
+          Separate from the co-op, and deliberately unpaid — being visible to
+          other riders is a feature, never something we buy from you. Turning
+          this on shares nothing with anyone outside Pedalshield.
         </Text>
-        {coopOptedIn && consentedAt > 0 ? (
-          <Text style={styles.coopMeta}>
-            Opted in {new Date(consentedAt).toLocaleDateString()} · you own this
-            choice and can revoke it instantly.
-          </Text>
-        ) : null}
       </Card>
 
       <PrivacyCheckupCard />
@@ -202,6 +271,67 @@ const styles = StyleSheet.create({
     color: theme.color.text,
     fontSize: 14,
     lineHeight: 20,
+  },
+  levelRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: theme.space.md,
+    paddingHorizontal: theme.space.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    marginTop: theme.space.md,
+  },
+  levelRowActive: {
+    borderColor: theme.color.accent,
+    backgroundColor: theme.color.bgElev,
+  },
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: theme.color.textMuted,
+    marginRight: theme.space.md,
+    marginTop: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOn: { borderColor: theme.color.accent },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: theme.color.accent,
+  },
+  levelText: { flex: 1 },
+  levelTitle: {
+    color: theme.color.text,
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  levelBody: {
+    color: theme.color.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  pool: {
+    marginTop: theme.space.lg,
+    padding: theme.space.md,
+    borderRadius: 12,
+    backgroundColor: theme.color.bg,
+  },
+  poolLabel: {
+    color: theme.color.textDim,
+    fontSize: theme.font.label.size,
+    letterSpacing: theme.font.label.letterSpacing,
+    marginBottom: theme.space.sm,
+  },
+  poolBody: {
+    color: theme.color.textDim,
+    fontSize: 13,
+    lineHeight: 19,
   },
   attestDebug: {
     color: theme.color.textDim,
