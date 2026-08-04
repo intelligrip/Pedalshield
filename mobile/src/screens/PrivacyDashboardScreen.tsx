@@ -13,6 +13,10 @@ import {
   setDataCoopOptIn,
 } from '../prefs/dataCoop.ts';
 import { shortAddress } from '../lib/format.ts';
+import {
+  attestationDiagnostics,
+  type AttestDiagnostics,
+} from '../wallet/appAttest.ts';
 
 const NEVER_COLLECTED = [
   'Your GPS route or any individual ride coordinates',
@@ -50,6 +54,19 @@ export function PrivacyDashboardScreen() {
     void setDataCoopOptIn(next);
   };
 
+  // Hardware attestation state. Shown because "is this device attested?" is
+  // a privacy-relevant fact the rider is entitled to see — and because every
+  // failure path in appAttest returns silently, which is right for riders and
+  // useless for working out why nothing is happening.
+  const [attest, setAttest] = useState<AttestDiagnostics | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void attestationDiagnostics().then((d) => alive && setAttest(d));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <ScreenContainer>
       <View>
@@ -64,6 +81,30 @@ export function PrivacyDashboardScreen() {
         {NEVER_COLLECTED.map((item, i) => (
           <Row key={i} icon="×" color={theme.color.danger} text={item} />
         ))}
+      </Card>
+
+      <Card>
+        <Text style={styles.sectionLabel}>HARDWARE ATTESTATION</Text>
+        <Text style={styles.attestBody}>
+          {attest?.registered
+            ? 'This device has proved to Apple that it is running a genuine, unmodified Pedalshield build. Nothing about you is revealed by it.'
+            : attest?.isSupported === false
+              ? 'This iPhone does not support App Attest. That is normal on older hardware and does not affect your earnings.'
+              : 'Not yet attested. Attestation is optional and never blocks a ride.'}
+        </Text>
+        {attest ? (
+          <Text style={styles.attestDebug} selectable>
+            {[
+              `stage: ${attest.stage}`,
+              `module: ${attest.moduleLoaded ? 'loaded' : 'missing'}`,
+              `supported: ${attest.isSupported === null ? 'unknown' : attest.isSupported}`,
+              `key: ${attest.hasKeyId ? 'yes' : 'no'}`,
+              attest.detail ? `detail: ${attest.detail}` : null,
+            ]
+              .filter(Boolean)
+              .join('\n')}
+          </Text>
+        ) : null}
       </Card>
 
       <Card accent>
@@ -157,6 +198,18 @@ const styles = StyleSheet.create({
     letterSpacing: theme.font.h1.letterSpacing,
   },
   tagline: { color: theme.color.textDim, fontSize: 15, marginTop: 4 },
+  attestBody: {
+    color: theme.color.text,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  attestDebug: {
+    color: theme.color.textDim,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: theme.space.md,
+    fontFamily: 'Menlo',
+  },
   sectionLabel: {
     color: theme.color.textDim,
     fontSize: theme.font.label.size,

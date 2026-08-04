@@ -80,6 +80,68 @@ export function attestationAvailable(): boolean {
 }
 
 /**
+ * Why attestation isn't running, in a form a human can read.
+ *
+ * Added because phase A produced nothing and every failure path here
+ * silently returns false — correct for riders, useless for diagnosis. Most
+ * of these states are NORMAL (older hardware simply cannot attest), so this
+ * is surfaced as information, never as a warning.
+ */
+export type AttestStage =
+  | 'ok'
+  | 'no-securestore'
+  | 'no-module'
+  | 'unsupported-device'
+  | 'no-challenge'
+  | 'attest-failed'
+  | 'register-rejected'
+  | 'error';
+
+let _lastStage: AttestStage | null = null;
+let _lastDetail: string | null = null;
+
+export interface AttestDiagnostics {
+  stage: AttestStage | 'not-attempted';
+  detail: string | null;
+  moduleLoaded: boolean;
+  /** Apple's own answer on whether this device can attest at all. */
+  isSupported: boolean | null;
+  hasKeyId: boolean;
+  registered: boolean;
+}
+
+export async function attestationDiagnostics(): Promise<AttestDiagnostics> {
+  let hasKeyId = false;
+  let registered = false;
+  try {
+    if (SecureStore) {
+      hasKeyId = !!(await SecureStore.getItemAsync(KEY_ID, STORE_OPTS));
+      registered =
+        (await SecureStore.getItemAsync(KEY_ATTESTED, STORE_OPTS)) === '1';
+    }
+  } catch {
+    /* diagnostics must never throw */
+  }
+  return {
+    stage: _lastStage ?? 'not-attempted',
+    detail: _lastDetail,
+    moduleLoaded: !!AppIntegrity,
+    isSupported: AppIntegrity ? AppIntegrity.isSupported === true : null,
+    hasKeyId,
+    registered,
+  };
+}
+
+function mark(stage: AttestStage, detail?: unknown): false {
+  _lastStage = stage;
+  _lastDetail =
+    detail === undefined
+      ? null
+      : String((detail as any)?.message ?? detail).slice(0, 200);
+  return false;
+}
+
+/**
  * Ask the backend for a one-time challenge. The challenge is what stops an
  * attacker replaying a captured attestation: it is generated server-side,
  * bound into the signed object by Apple, and accepted exactly once.
@@ -108,15 +170,24 @@ async function fetchChallenge(riderId: string): Promise<string | null> {
  * next call generates a fresh one rather than retrying a dead handle.
  */
 export async function ensureAttestation(riderId: string): Promise<boolean> {
-  if (!attestationAvailable()) return false;
+  if (!SecureStore) return mark('no-securestore');
+  if (!AppIntegrity) return mark('no-module');
+  if (AppIntegrity.isSupported !== true) {
+    // Normal on iPhones without Apple Intelligence-era Secure Enclave
+    // support, and on the simulator. Not an error, not the rider's fault.
+    return mark('unsupported-device', `isSupported=${AppIntegrity.isSupported}`);
+  }
   try {
     const already = await SecureStore.getItemAsync(KEY_ATTESTED, STORE_OPTS);
-    if (already === '1') return true;
+    if (already === '1') {
+      _lastStage = 'ok';
+      return true;
+    }
 
     let keyId = await SecureStore.getItemAsync(KEY_ID, STORE_OPTS);
     if (!keyId) {
       keyId = await AppIntegrity.generateKeyAsync();
-      if (!keyId) return false;
+      if (!keyId) return mark('attest-failed', 'generateKeyAsync returned empty');
       // Persist BEFORE attesting: the key exists in the Secure Enclave the
       // moment it's generated, and there is no way to enumerate it later.
       // Losing the identifier means orphaning a key we can never use.
@@ -124,10 +195,19 @@ export async function ensureAttestation(riderId: string): Promise<boolean> {
     }
 
     const challenge = await fetchChallenge(riderId);
-    if (!challenge) return false;
+    if (!challenge) return mark('no-challenge', 'backend did not issue one');
 
-    const attestation = await AppIntegrity.attestKeyAsync(keyId, challenge);
-    if (!attestation) return false;
+    let attestation: string | null = null;
+    try {
+      attestation = await AppIntegrity.attestKeyAsync(keyId, challenge);
+    } catch (e) {
+      // The interesting failure. Apple rejects attestation when the App
+      // Attest capability isn't on the App ID, or when the entitlement's
+      // environment (development vs production) doesn't match how the build
+      // was signed. The message is the fastest route to which one it is.
+      return mark('attest-failed', e);
+    }
+    if (!attestation) return mark('attest-failed', 'attestKeyAsync returned empty');
 
     const res = await fetch(`${BACKEND_URL}/rider/attest`, {
       method: 'POST',
@@ -146,12 +226,14 @@ export async function ensureAttestation(riderId: string): Promise<boolean> {
       if (res.status === 400 || res.status === 409) {
         await SecureStore.deleteItemAsync(KEY_ID, STORE_OPTS);
       }
-      return false;
+      return mark('register-rejected', `HTTP ${res.status}`);
     }
     await SecureStore.setItemAsync(KEY_ATTESTED, '1', STORE_OPTS);
+    _lastStage = 'ok';
+    _lastDetail = null;
     return true;
-  } catch {
-    return false; // never block a ride on attestation
+  } catch (e) {
+    return mark('error', e); // never block a ride on attestation
   }
 }
 
