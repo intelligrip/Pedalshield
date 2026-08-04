@@ -22,6 +22,7 @@ import { computeRideStats } from '../ride/rideStats.ts';
 import { addRide } from '../ride/rideHistory.ts';
 import { getPrivateRidePrefs } from '../prefs/privateRide.ts';
 import { RideStatsCard } from '../components/RideStatsCard.tsx';
+import { VerdictCard } from '../components/VerdictCard.tsx';
 import type { RawRide } from '../verification/types.ts';
 import {
   RealSensorSource,
@@ -618,17 +619,10 @@ function PostRide({
         </>
       )}
 
-      {result.flags.length > 0 && (
-        <Card>
-          <Text style={styles.cardLabel}>VERIFICATION NOTES</Text>
-          {result.flags.map((f, i) => (
-            <Text key={i} style={styles.flag}>
-              · {f.code.replace(/_/g, ' ').toLowerCase()}
-              {f.detail ? ` (${f.detail})` : ''}
-            </Text>
-          ))}
-        </Card>
-      )}
+      {/* Plain-language explanation. Replaces the old raw flag-code dump,
+          which told a rider only that a machine had judged them. Renders
+          nothing on a clean verified ride. */}
+      <VerdictCard result={result} />
 
       <Button label="Done" size="lg" onPress={onDone} />
 
@@ -838,7 +832,6 @@ const styles = StyleSheet.create({
     marginBottom: theme.space.sm,
   },
   payoutLine: { color: theme.color.text, fontSize: 15, lineHeight: 22 },
-  flag: { color: theme.color.textDim, fontSize: 13, marginVertical: 2 },
   linkRow: { marginTop: theme.space.md },
   linkText: {
     color: theme.color.accent,
