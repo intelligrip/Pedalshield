@@ -29,16 +29,30 @@
 
 declare const require: (m: string) => any;
 
+/**
+ * CURRENTLY DISABLED — and the app is unaffected.
+ *
+ * `@react-native-ai/apple` is driven through the Vercel AI SDK (`ai`), and
+ * `@ai-sdk/provider-utils` contains a dynamic `import(id)` that Metro refuses
+ * to bundle:
+ *
+ *     SyntaxError: @ai-sdk/provider-utils/dist/index.mjs
+ *     Invalid call at line 481: import(id)
+ *
+ * That failure blocks the whole bundle — including the deterministic verdict
+ * copy, which is the part riders actually read. A bonus feature must never
+ * be able to take the real one down with it, so the SDK is not imported at
+ * all until we integrate a package that bundles cleanly (candidates:
+ * react-native-apple-llm, @ratley/react-native-apple-foundation-models —
+ * both expose native methods directly, with no Vercel SDK in the path).
+ *
+ * Everything below keeps its shape. `generateLine` returns null, every
+ * caller falls back to hand-written copy, and nothing on screen changes.
+ */
+const MODEL_RUNTIME_AVAILABLE = false;
+
 let appleProvider: any = null;
 let aiSdk: any = null;
-try {
-  appleProvider = require('@react-native-ai/apple')?.apple ?? null;
-  aiSdk = require('ai') ?? null;
-  if (typeof aiSdk?.generateText !== 'function') aiSdk = null;
-} catch {
-  appleProvider = null;
-  aiSdk = null;
-}
 
 /**
  * Generation must never make a rider wait. If the model is slow we drop it
@@ -49,7 +63,7 @@ const GENERATION_TIMEOUT_MS = 4000;
 
 /** Cheap synchronous check: are the native pieces present at all? */
 export function onDeviceModelPresent(): boolean {
-  return !!appleProvider && !!aiSdk;
+  return MODEL_RUNTIME_AVAILABLE && !!appleProvider && !!aiSdk;
 }
 
 let _availability: boolean | null = null;
