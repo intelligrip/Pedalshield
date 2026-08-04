@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Pedalshield — Get paid to ride your bike. Privately.</title>
-<meta name="description" content="Pedalshield pays you shielded ZEC for real bike rides — and your route never leaves your phone. iPhone beta open now via TestFlight." />
+<title>Pedalshield — Prove the ride. Never the route.</title>
+<meta name="description" content="Pedalshield verifies real bike rides entirely on your phone. A number and a signature leave — never a map of where you live, work, or go. Free iPhone beta." />
 <!-- Open Graph / social preview -->
-<meta property="og:title" content="Pedalshield — Get paid to ride your bike. Privately." />
-<meta property="og:description" content="Real shielded ZEC for real rides. Your route never leaves your phone. iPhone beta open now." />
+<meta property="og:title" content="Pedalshield — Prove the ride. Never the route." />
+<meta property="og:description" content="Verified bike rides, proven on your phone. You choose what leaves it — and the default is almost nothing." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://pedalshield.app/" />
 <meta property="og:image" content="https://pedalshield.app/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Pedalshield — Get paid to ride your bike. Privately." />
-<meta name="twitter:description" content="Real shielded ZEC for real rides. Your route never leaves your phone. iPhone beta open now." />
+<meta name="twitter:title" content="Pedalshield — Prove the ride. Never the route." />
+<meta name="twitter:description" content="Verified bike rides, proven on your phone. You choose what leaves it — and the default is almost nothing." />
 <meta name="twitter:image" content="https://pedalshield.app/og-image.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -132,6 +132,31 @@
   .cheat .footnote{margin-top:26px;color:var(--dim);font-size:.9rem;max-width:66ch}
   .cheat .footnote a{border-bottom:1px dashed rgba(43,217,159,.5)}
 
+  /* Tiers */
+  .tiers .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px}
+  @media(max-width:820px){.tiers .grid{grid-template-columns:1fr}}
+  .tier{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:26px;position:relative;display:flex;flex-direction:column}
+  .tier.default{border-color:rgba(43,217,159,.45);box-shadow:0 0 0 1px rgba(43,217,159,.12)}
+  .tier .tag{position:absolute;top:-11px;left:26px;background:var(--mint);color:#062016;font-size:.68rem;font-weight:800;letter-spacing:.08em;padding:4px 11px;border-radius:999px;text-transform:uppercase}
+  .tier h3{font-size:1.22rem;margin-bottom:6px}
+  .tier .lvl{color:var(--dim);font-size:.76rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px}
+  .tier p{color:var(--muted);font-size:.95rem;margin-bottom:16px}
+  .tier ul{list-style:none;margin-top:auto}
+  .tier li{font-size:.88rem;color:var(--muted);padding:5px 0 5px 22px;position:relative}
+  .tier li::before{content:"✓";position:absolute;left:0;color:var(--mint);font-weight:800}
+  .tier li.no{color:var(--dim)}
+  .tier li.no::before{content:"×";color:#7c8f87}
+  .tiers .clip{margin-top:30px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--mint);border-radius:12px;padding:22px 24px;max-width:70ch}
+  .tiers .clip b{color:var(--ink)}
+  .tiers .clip p{color:var(--muted);font-size:.97rem}
+
+  /* Institutional footer note */
+  .forprograms{border-top:1px solid var(--line);background:var(--bg2)}
+  .forprograms .wrap{padding:34px 24px;display:flex;gap:18px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+  .forprograms .t{max-width:60ch}
+  .forprograms .t strong{font-family:'Sora';display:block;font-size:1.05rem;color:var(--ink);margin-bottom:4px}
+  .forprograms .t span{color:var(--muted);font-size:.95rem}
+
   /* FAQ */
   .faq details{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-top:12px;overflow:hidden}
   .faq details:first-of-type{margin-top:36px}
@@ -202,18 +227,19 @@
 <header class="hero">
   <div class="wrap">
     <div>
-      <span class="eyebrow"><span class="dot"></span> iPhone beta open · paying real ZEC on Zcash mainnet</span>
-      <h1>Get paid to ride your bike. <em>Nobody sees where you go.</em></h1>
-      <p class="lede">Pedalshield pays you shielded ZEC for real rides — and your route <b>never leaves your phone</b>. Not encrypted-and-uploaded. Never uploaded.</p>
+      <span class="eyebrow"><span class="dot"></span> Free iPhone beta · verifying real rides on Zcash mainnet</span>
+      <h1>Prove the ride. <em>Never the route.</em></h1>
+      <p class="lede">Pedalshield verifies real bike rides <b>entirely on your phone</b>. What leaves is a distance and a signature — never a map of where you live, work, or go.</p>
       <div class="cta-row">
         <a href="#join" class="btn big js-install"><svg class="apple" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8.79-.16 2.09-.86 3.51-.73 1.51.13 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.47 3.97zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg><span>Install on iPhone — free</span></a>
         <a href="#how" class="btn ghost">See how it works</a>
       </div>
       <div class="chips">
-        <span class="chip"><b>✓</b> Non-custodial</span>
+        <span class="chip"><b>✓</b> No route database to breach</span>
         <span class="chip"><b>✓</b> Open source · MIT</span>
         <span class="chip"><b>✓</b> No token, no ponzi</span>
-        <span class="chip"><b>✓</b> Payouts with no human in the loop</span>
+        <span class="chip"><b>✓</b> You choose what you share</span>
+        <span class="chip"><b>✓</b> Beta riders earn real ZEC</span>
       </div>
     </div>
     <aside class="qr-card">
@@ -227,7 +253,7 @@
 
 <div class="proofstrip">
   <div class="wrap">
-    <div class="lab"><b>Proof, not promises:</b> real autonomous payouts on Zcash mainnet — tap a txid and check the block explorer yourself.</div>
+    <div class="lab"><b>Proof, not promises:</b> verified rides paid autonomously on Zcash mainnet, no operator in the loop — tap a txid and check the chain yourself.</div>
     <div class="txids">
       <a class="txid" href="https://mainnet.zcashexplorer.app/transactions/2a849aca04f9b9661ec826c22db97edfb988a22fc7ce7432a651abbc08b264ab" target="_blank" rel="noopener">2a849aca…b264ab ↗</a>
       <a class="txid" href="https://mainnet.zcashexplorer.app/transactions/f1a3bacc582e156069b108afa61711a7dbae9ceff84c8d0c5b8f5fca15c10ba6" target="_blank" rel="noopener">f1a3bacc…c10ba6 ↗</a>
@@ -239,7 +265,8 @@
 <section class="band" id="how">
   <div class="wrap">
     <div class="kicker">How it works</div>
-    <h2 class="title">Install. Ride. Get paid. That's the whole app.</h2>
+    <h2 class="title">Ride. Your phone does the proving.</h2>
+    <p class="sub">No account. No email. No name. Nothing to sign up for — you connect a wallet you already control and start riding.</p>
     <div class="steps">
       <div class="step">
         <div class="n">1</div>
@@ -249,12 +276,12 @@
       <div class="step">
         <div class="n">2</div>
         <h3>Ride your bike</h3>
-        <p>Tap start and ride. GPS and motion sensors verify the ride entirely on your device — the route never leaves your phone.</p>
+        <p>Tap start and ride. GPS, motion and barometer are read on-device to prove a human on a bicycle actually moved through the world. The route stays on the phone.</p>
       </div>
       <div class="step">
         <div class="n">3</div>
-        <h3>ZEC lands in your wallet</h3>
-        <p>The moment your ride verifies, an autonomous treasury pays shielded ZEC to your address. No approval queue, no operator, no waiting. You get the txid in-app.</p>
+        <h3>The proof is signed and sent</h3>
+        <p>Your phone signs a verdict — distance, an integrity score, nothing else — and an autonomous treasury pays shielded ZEC straight to your address. No approval queue, no operator, no waiting.</p>
       </div>
     </div>
     <div class="cta-row" style="margin-top:36px">
@@ -289,11 +316,64 @@
   </div>
 </section>
 
+<section class="band tiers" id="choose">
+  <div class="wrap">
+    <div class="kicker">Your call, not ours</div>
+    <h2 class="title">You choose what leaves your phone.</h2>
+    <p class="sub">Most apps give you one switch and a paragraph of reassurance. Pedalshield gives you three separate, revocable choices — and the strictest one is the default you never have to find.</p>
+
+    <div class="grid">
+      <div class="tier default">
+        <span class="tag">Default</span>
+        <h3>Shielded</h3>
+        <div class="lvl">Level 0</div>
+        <p>A signed verdict and nothing else. How far you rode, and that it was real.</p>
+        <ul>
+          <li>Verified distance</li>
+          <li>Integrity score</li>
+          <li class="no">No route</li>
+          <li class="no">No times or patterns</li>
+        </ul>
+      </div>
+      <div class="tier">
+        <h3>Aggregate</h3>
+        <div class="lvl">Level 1</div>
+        <p>Adds coarse, bucketed signals that can't be traced back to a person.</p>
+        <ul>
+          <li>Distance band</li>
+          <li>Hour of day</li>
+          <li>CO₂ estimate &amp; region</li>
+          <li class="no">Still no route</li>
+        </ul>
+      </div>
+      <div class="tier">
+        <h3>Route</h3>
+        <div class="lvl">Level 2</div>
+        <p>Adds the shape of your ride, so planners can see where bike lanes are actually needed.</p>
+        <ul>
+          <li>Route geometry</li>
+          <li>Both ends always removed</li>
+          <li>Rounded to ~11 m</li>
+          <li class="no">Never your address</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="clip">
+      <p><b>Endpoint protection has no off switch.</b> The danger in route data was never the ride — it's that the start and end are someone's home, workplace, school or clinic. Strava's privacy zones are opt-in, which means the rider who never finds the setting is the one most exposed. Here the first and last ~250 m are removed from every shared route, for everyone, with no way to disable it.</p>
+    </div>
+
+    <div class="clip" style="border-left-color:var(--purple)">
+      <p><b>Being visible to other riders is separate — and unpaid.</b> Leaderboards and shared cards are a feature, never something we buy from you. Sharing with other cyclists and licensing data to a city are different decisions, so they're different switches.</p>
+    </div>
+  </div>
+</section>
+
 <section class="band cheat" id="anticheat">
   <div class="wrap">
     <div class="kicker">Real rides only</div>
-    <h2 class="title">The treasury pays cyclists — not cars, couches, or GPS spoofs.</h2>
-    <p class="sub">Every ride is scored on your phone by a layered anti-cheat engine before a single zatoshi moves. That's what keeps rewards flowing to people who actually ride.</p>
+    <h2 class="title">Verified, not self-reported.</h2>
+    <p class="sub">Anyone can claim they rode. A physics engine runs on your phone before anything is signed — speed envelopes, pedalling cadence, road vibration, and whether your motion sensors actually agree with your GPS. That's the difference between a log and a proof.</p>
     <div class="checks">
       <div class="check">
         <h4><span class="ic">✓</span> Catches cars</h4>
@@ -307,8 +387,20 @@
         <h4><span class="ic">✓</span> Catches walks</h4>
         <p>Real cyclists break ~15 km/h at least briefly. A walk dressed up as a ride never does — and never gets paid.</p>
       </div>
+      <div class="check">
+        <h4><span class="ic">✓</span> Catches replays</h4>
+        <p>Replay a real GPS track while shaking the phone and the sensors stop agreeing: the gyroscope must turn when the route turns, and road buzz must rise with speed. Faking one sensor is easy; faking two that stay in step is not.</p>
+      </div>
+      <div class="check">
+        <h4><span class="ic">✓</span> Pays the clean miles</h4>
+        <p>One bad GPS stretch costs you that stretch, not the whole ride. Impossible sections are cut out and earn nothing; the rest still counts.</p>
+      </div>
+      <div class="check">
+        <h4><span class="ic">✓</span> Explains itself</h4>
+        <p>If a ride doesn't fully verify, the app tells you what the sensors saw and the most likely innocent reason — instead of silently paying you less.</p>
+      </div>
     </div>
-    <p class="footnote">Honest limits: the anti-cheat is layered, not perfect, and we <a href="https://github.com/intelligrip/Pedalshield" target="_blank" rel="noopener">publish what it doesn't catch</a>. ZK route proofs and a community-signed treasury are on the roadmap, not live today.</p>
+    <p class="footnote">Honest limits: the engine raises the cost of cheating well above the reward — it isn't unbeatable, and we <a href="https://github.com/intelligrip/Pedalshield/blob/main/docs/ANTI_CHEAT_THREAT_MODEL.md" target="_blank" rel="noopener">publish the threat model including what it doesn't catch yet</a>. Hardware attestation, ZK route proofs and a community-signed treasury are on the roadmap, not live today.</p>
   </div>
 </section>
 
@@ -317,8 +409,16 @@
     <div class="kicker">FAQ</div>
     <h2 class="title">Fair questions, straight answers.</h2>
     <details open>
-      <summary>How much do I actually earn?</summary>
-      <div class="a">About <b>$0.09 per mile</b>, paid in shielded ZEC — each mile ridden instead of driven avoids ~1 lb of CO2, and we pay you its value at the <b>EPA's social cost of carbon</b> (~$190/tonne), with a per-ride cap. That's deliberate: rewards come from a finite treasury, not a minted token, so they're sustainable instead of a pump-and-dump. <b>Privacy is the product; the ZEC is a bonus.</b></div>
+      <summary>What is Pedalshield actually for?</summary>
+      <div class="a">Proving a trip happened without surveilling the person who took it. Every system that wants to reward physical movement faces the same fork: trust a self-report, or harvest location data. <b>Pedalshield collapses that fork</b> — your phone does the judging, and only the verdict leaves. Riders get privacy and a small reward; programmes that need verified trips get proof without holding anyone's route.</div>
+    </details>
+    <details>
+      <summary>How much do I earn, honestly?</summary>
+      <div class="a">About <b>$0.09 per mile</b> in shielded ZEC, capped per ride. Each mile ridden instead of driven avoids roughly 1 lb of CO₂, and that's its value at the <b>EPA's social cost of carbon</b>. Being straight with you: this is a <b>beta funded from a finite treasury</b>, not an income. Nobody should ride for the money — ride because you were going to anyway, and the proof is worth something. <b>Privacy is the product; the ZEC is a bonus.</b></div>
+    </details>
+    <details>
+      <summary>So how does Pedalshield make money?</summary>
+      <div class="a">Not by selling you out. Employers, universities and cities are <b>legally required</b> in many places to measure commuting — and today they do it with self-reported surveys. We sell them verified trip counts, which means they never need to touch an employee's location data. If a rider chooses to contribute route data on top of that, <b>the co-op pays them a share of what it's licensed for</b>. Nothing has been licensed yet, so that pool is $0 today, and we'd rather say so than imply otherwise.</div>
     </details>
     <details>
       <summary>Is this another crypto ponzi like StepN?</summary>
@@ -330,7 +430,11 @@
     </details>
     <details>
       <summary>What data leaves my phone?</summary>
-      <div class="a">A minimal claim: distance, duration, and an integrity score. <b>No coordinates, no route, no accelerometer or sensor data</b> — an open-source unit test pins the exact payload and rejects those fields. No account, no email, no identity required to ride.</div>
+      <div class="a">By default: distance, duration, and an integrity score. <b>No coordinates, no route, no sensor data</b> — an open-source unit test pins the exact payload and rejects those fields. No account, no email, no identity required to ride. You can choose to share more (see <a href="#choose">what leaves your phone</a>), and you can revoke it at any time with nothing left behind.</div>
+    </details>
+    <details>
+      <summary>What if I don't trust you?</summary>
+      <div class="a">Good — don't. The privacy contract is <b>MIT-licensed and testable</b>: clone the repo, run the test that asserts no location or sensor field can appear in a claim, and watch it pass. The anti-cheat engine itself is closed (publishing exact thresholds would just hand them to spoofers), but <b>what it defends and why is public</b> in the threat model, including its current gaps.</div>
     </details>
     <details>
       <summary>I'm on Android — can I ride?</summary>
@@ -346,8 +450,8 @@
 <section class="final" id="join">
   <div class="wrap">
     <div class="signup">
-      <h2 id="joinTitle">Your next ride can pay you.</h2>
-      <p class="p" id="joinSub">Free on iPhone via TestFlight. Ride today, get shielded ZEC today — and keep your routes to yourself.</p>
+      <h2 id="joinTitle">Ride. Keep your routes.</h2>
+      <p class="p" id="joinSub">Free on iPhone via TestFlight. No account, no email, no name — connect a wallet you already control and ride.</p>
       <a class="btn big js-install" id="joinInstall">Install on iPhone — free</a>
       <div class="final-qr">
         <div id="qrcode2" aria-label="QR code to install Pedalshield"></div>
@@ -365,9 +469,19 @@
   </div>
 </section>
 
+<div class="forprograms">
+  <div class="wrap">
+    <div class="t">
+      <strong>Run a commute programme, campus or city?</strong>
+      <span>If you're measuring mode shift with self-reported surveys, we can give you verified trip counts without your people ever handing over their location data. Pilots are open in Bend, Oregon.</span>
+    </div>
+    <a class="btn ghost" href="mailto:hello@pedalshield.app?subject=Pedalshield%20pilot">Talk to us</a>
+  </div>
+</div>
+
 <footer>
   <div class="wrap row">
-    <div>© 2026 Pedalshield · Ride private. Earn shielded. · <a href="/privacy/">Privacy</a> · <a href="https://github.com/intelligrip/Pedalshield" target="_blank" rel="noopener">GitHub</a></div>
+    <div>© 2026 Pedalshield · Prove the ride, never the route. · <a href="/privacy/">Privacy</a> · <a href="https://github.com/intelligrip/Pedalshield" target="_blank" rel="noopener">GitHub</a></div>
     <div class="badges">
       <span class="badge">Built on Zcash</span>
       <span class="badge">MIT licensed</span>
