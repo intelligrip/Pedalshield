@@ -78,6 +78,9 @@ struct AppState {
     claim_signature_max_age_s: u64,
     ua_daily_meters: u64,
     global_daily_meters: u64,
+    /// Treasury mechanism: progressive-trust multiplier + flat per-claim
+    /// fee. Inert with stock config (see compute_payout_split).
+    trust: TrustConfig,
     /// Serializes payouts so two claims never try to spend the same note
     /// before the first has been mined.
     payout_lock: Arc<tokio::sync::Mutex<()>>,
@@ -137,6 +140,21 @@ struct ClaimRow {
     status: String,
     payout_txid: Option<String>,
     rejection_reason: Option<String>,
+    /// The actual amount sent, in zatoshi. Recorded at payout time so the
+    /// paid value never has to be reconstructed from a rate that may since
+    /// have been re-pegged (which is what made the lifetime backfill
+    /// approximate). Null on claims paid before this column existed.
+    #[serde(default)]
+    payout_zat: Option<u64>,
+    /// Reward before the treasury mechanism, and what it withheld. Surfaced
+    /// so the app can show the rider the full split — an invisible deduction
+    /// is skimming, a visible one is membership.
+    #[serde(default)]
+    payout_gross_zat: Option<u64>,
+    #[serde(default)]
+    payout_withheld_zat: Option<u64>,
+    #[serde(default)]
+    trust_bps: Option<u32>,
     created_at: u64,
     updated_at: u64,
 }
@@ -425,6 +443,12 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     // ALTER TABLE ADD COLUMN errors if the column exists; ignore that.
     let _ = conn.execute("ALTER TABLE claims ADD COLUMN rider_id TEXT", []);
     let _ = conn.execute("ALTER TABLE claims ADD COLUMN signed_at INTEGER", []);
+    // Treasury mechanism + exact paid amount. Additive; errors when the
+    // column already exists, which is expected and ignored.
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN payout_zat INTEGER", []);
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN payout_gross_zat INTEGER", []);
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN payout_withheld_zat INTEGER", []);
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN trust_bps INTEGER", []);
 
     // --- Crash recovery: un-stick claims abandoned mid-payout ----------
     // A claim moves pending -> paying before the (slow) scan + prove +
@@ -865,7 +889,8 @@ fn insert_claim(conn: &Connection, c: &ClaimRow) -> Result<(), rusqlite::Error> 
 fn fetch_claim(conn: &Connection, id: &str) -> Result<Option<ClaimRow>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT id, recipient_ua, distance_meters, signature, attestation,
-                status, payout_txid, rejection_reason, created_at, updated_at
+                status, payout_txid, rejection_reason, created_at, updated_at,
+                payout_zat, payout_gross_zat, payout_withheld_zat, trust_bps
          FROM claims WHERE id = ?1",
     )?;
     let row = stmt
@@ -965,12 +990,23 @@ fn set_paid_from_paying(
     conn: &Connection,
     id: &str,
     txid: &str,
+    split: &PayoutSplit,
 ) -> Result<bool, rusqlite::Error> {
     let now = now_secs() as i64;
     let n = conn.execute(
-        "UPDATE claims SET status = 'paid', payout_txid = ?1, updated_at = ?2
+        "UPDATE claims SET status = 'paid', payout_txid = ?1, updated_at = ?2,
+             payout_zat = ?4, payout_gross_zat = ?5,
+             payout_withheld_zat = ?6, trust_bps = ?7
          WHERE id = ?3 AND status = 'paying'",
-        params![txid, now, id],
+        params![
+            txid,
+            now,
+            id,
+            split.net_zat as i64,
+            split.gross_zat as i64,
+            split.withheld_zat as i64,
+            split.trust_bps as i64
+        ],
     )?;
     Ok(n > 0)
 }
@@ -1092,6 +1128,13 @@ fn row_to_claim(row: &rusqlite::Row) -> rusqlite::Result<ClaimRow> {
         rejection_reason: row.get(7)?,
         created_at: row.get::<_, i64>(8)? as u64,
         updated_at: row.get::<_, i64>(9)? as u64,
+        // Positional 10..13 — only the `fetch_claim` query selects these;
+        // the list queries don't, so they're read defensively and default
+        // to None rather than failing the whole row.
+        payout_zat: row.get::<_, Option<i64>>(10).unwrap_or(None).map(|v| v as u64),
+        payout_gross_zat: row.get::<_, Option<i64>>(11).unwrap_or(None).map(|v| v as u64),
+        payout_withheld_zat: row.get::<_, Option<i64>>(12).unwrap_or(None).map(|v| v as u64),
+        trust_bps: row.get::<_, Option<i64>>(13).unwrap_or(None).map(|v| v as u32),
     })
 }
 
@@ -1283,6 +1326,13 @@ async fn post_claim(
         status: "pending".into(),
         payout_txid: None,
         rejection_reason: None,
+        // A pending claim has no split yet — the trust tier is evaluated at
+        // payout time, not at submission, so a rider who attests between
+        // riding and being paid gets the better rate.
+        payout_zat: None,
+        payout_gross_zat: None,
+        payout_withheld_zat: None,
+        trust_bps: None,
         created_at: now,
         updated_at: now,
     };
@@ -1714,6 +1764,177 @@ fn compute_payout(distance_meters: u64, zat_per_km: u64, max_payout_zat: u64) ->
     raw.min(max_payout_zat)
 }
 
+// --- Treasury mechanism: trust multiplier + flat claim fee ------------
+//
+// A deduction from a payout creates NO new money — withholding 10% is
+// arithmetic-identical to paying 10% less. This exists as a MECHANISM, not
+// as revenue, and it does two things heuristics can't:
+//
+//  1. FLAT FEE, per claim rather than per mile. Makes many tiny claims
+//     strictly worse than fewer real rides, which inverts a farmer's
+//     optimal strategy. Economic, so it has no false-positive rate.
+//
+//  2. TRUST MULTIPLIER, the progressive-trust item from the threat model.
+//     A device with no attestation and no history earns at a reduced rate
+//     until it accrues either. A fresh Sybil identity is therefore never
+//     worth creating, and nothing has to DETECT anything.
+//
+// The withheld portion is never sent, so it costs no ZIP-317 fee — a
+// separate on-chain movement would cost ~15-20k zat and dwarf any
+// plausible deduction.
+//
+// DEFAULTS ARE A NO-OP. Fee 0, every trust tier 10000 bps (1.0x). Shipping
+// a live deduction that silently cuts existing riders' earnings would be
+// the third false promise this codebase has had to remove; the mechanism
+// lands inert and is turned on deliberately.
+
+/// One basis point = 1/10000. 10000 bps = 1.0x = no reduction.
+pub const TRUST_BPS_FULL: u32 = 10_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PayoutSplit {
+    /// Reward before any deduction.
+    pub gross_zat: u64,
+    /// Trust multiplier actually applied, in basis points.
+    pub trust_bps: u32,
+    /// Flat per-claim fee applied after the multiplier.
+    pub flat_fee_zat: u64,
+    /// Total withheld (gross - net). Shown to the rider, never hidden.
+    pub withheld_zat: u64,
+    /// What is actually sent on-chain.
+    pub net_zat: u64,
+}
+
+/// Apply the trust multiplier then the flat fee. Saturating throughout: a
+/// misconfiguration must never underflow into a giant payout.
+fn compute_payout_split(gross_zat: u64, trust_bps: u32, flat_fee_zat: u64) -> PayoutSplit {
+    let after_trust = (gross_zat as u128 * trust_bps as u128 / TRUST_BPS_FULL as u128) as u64;
+    let net = after_trust.saturating_sub(flat_fee_zat);
+    PayoutSplit {
+        gross_zat,
+        trust_bps,
+        flat_fee_zat,
+        withheld_zat: gross_zat.saturating_sub(net),
+        net_zat: net,
+    }
+}
+
+/// Trust tier for a rider, in basis points.
+///
+/// Attestation outranks history: a hardware-attested device is a stronger
+/// signal than any number of unverified rides, because history can be
+/// manufactured and Secure Enclave attestation cannot. A rider with neither
+/// still earns — just at the reduced rate — because "new" is not "fraudulent"
+/// and refusing to pay a genuine first-time rider is how you lose them.
+fn trust_bps_for(
+    conn: &Connection,
+    recipient_ua: &str,
+    rider_id: Option<&str>,
+    cfg: &TrustConfig,
+) -> u32 {
+    if let Some(rid) = rider_id {
+        let attested: Option<i64> = conn
+            .query_row(
+                "SELECT verified FROM rider_attestations WHERE rider_id = ?1",
+                params![rid],
+                |r| r.get(0),
+            )
+            .optional()
+            .unwrap_or(None);
+        if attested == Some(1) {
+            return cfg.attested_bps;
+        }
+    }
+
+    let paid: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM claims WHERE recipient_ua = ?1 AND status = 'paid'",
+            params![recipient_ua],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    if paid as u64 >= cfg.history_rides {
+        cfg.history_bps
+    } else {
+        cfg.new_bps
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TrustConfig {
+    new_bps: u32,
+    history_bps: u32,
+    attested_bps: u32,
+    history_rides: u64,
+    flat_fee_zat: u64,
+}
+
+impl TrustConfig {
+    fn from_env() -> Self {
+        let get = |k: &str, d: u32| {
+            env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+        };
+        Self {
+            new_bps: get("PEDALSHIELD_TRUST_NEW_BPS", TRUST_BPS_FULL),
+            history_bps: get("PEDALSHIELD_TRUST_HISTORY_BPS", TRUST_BPS_FULL),
+            attested_bps: get("PEDALSHIELD_TRUST_ATTESTED_BPS", TRUST_BPS_FULL),
+            history_rides: env::var("PEDALSHIELD_TRUST_HISTORY_RIDES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5),
+            flat_fee_zat: env::var("PEDALSHIELD_FLAT_FEE_ZAT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+        }
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_are_a_no_op() {
+        let s = compute_payout_split(30_000, TRUST_BPS_FULL, 0);
+        assert_eq!(s.net_zat, 30_000);
+        assert_eq!(s.withheld_zat, 0);
+    }
+
+    #[test]
+    fn trust_multiplier_reduces_proportionally() {
+        let s = compute_payout_split(30_000, 5_000, 0); // 0.5x
+        assert_eq!(s.net_zat, 15_000);
+        assert_eq!(s.withheld_zat, 15_000);
+    }
+
+    #[test]
+    fn flat_fee_applies_after_the_multiplier() {
+        let s = compute_payout_split(30_000, 5_000, 1_000);
+        assert_eq!(s.net_zat, 14_000);
+    }
+
+    #[test]
+    fn a_fee_larger_than_the_reward_floors_at_zero() {
+        // Must never underflow into an enormous payout.
+        let s = compute_payout_split(500, TRUST_BPS_FULL, 10_000);
+        assert_eq!(s.net_zat, 0);
+        assert_eq!(s.withheld_zat, 500);
+    }
+
+    #[test]
+    fn gross_and_net_always_reconcile() {
+        for gross in [0u64, 1, 500, 30_000, u64::MAX / 2] {
+            for bps in [0u32, 2_500, 10_000] {
+                for fee in [0u64, 1_000] {
+                    let s = compute_payout_split(gross, bps, fee);
+                    assert_eq!(s.net_zat + s.withheld_zat, s.gross_zat);
+                }
+            }
+        }
+    }
+}
+
 /// One-time backfill of lifetime totals for rides that were paid before
 /// `record_direct_payout` existed.
 ///
@@ -1846,9 +2067,39 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
     }
     .ok_or(PayoutError::NotFound)?;
 
-    let amount_zat = compute_payout(claim.distance_meters, state.zat_per_km, state.max_payout_zat);
+    // Gross reward, then the treasury mechanism: trust multiplier + flat
+    // claim fee. Inert by default (see compute_payout_split) — with stock
+    // config `split.net_zat == gross`, so existing riders are unaffected
+    // until the rates are deliberately set.
+    let gross_zat = compute_payout(claim.distance_meters, state.zat_per_km, state.max_payout_zat);
+    let split = {
+        let conn = state.db.lock().unwrap();
+        // `fetch_claim`'s positional query doesn't select rider_id (see
+        // row_to_claim), so read it directly rather than silently losing the
+        // attestation tier for every claim.
+        let rider_id: Option<String> = conn
+            .query_row("SELECT rider_id FROM claims WHERE id = ?1", params![id], |r| {
+                r.get(0)
+            })
+            .optional()
+            .ok()
+            .flatten();
+        let bps = trust_bps_for(&conn, &claim.recipient_ua, rider_id.as_deref(), &state.trust);
+        compute_payout_split(gross_zat, bps, state.trust.flat_fee_zat)
+    };
+    let amount_zat = split.net_zat;
     if amount_zat == 0 {
         return Err(PayoutError::ZeroAmount);
+    }
+    if split.withheld_zat > 0 {
+        tracing::info!(
+            claim_id = %id,
+            gross = split.gross_zat,
+            net = split.net_zat,
+            withheld = split.withheld_zat,
+            trust_bps = split.trust_bps,
+            "treasury mechanism applied"
+        );
     }
 
     // Atomic reserve; only the winner proceeds (double-pay guard).
@@ -1893,7 +2144,7 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
         Ok(r) => match r.broadcast {
             Some((0, _)) => {
                 let conn = state.db.lock().unwrap();
-                set_paid_from_paying(&conn, &id, &r.txid_hex)
+                set_paid_from_paying(&conn, &id, &r.txid_hex, &split)
                     .map_err(|e| PayoutError::Internal(format!("db: {e}")))?;
                 // Only advance on a CONFIRMED-ACCEPTED broadcast. Our change
                 // note is created by this tx, so tip-at-build minus the reorg
@@ -2582,6 +2833,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    let trust = TrustConfig::from_env();
+    if trust.flat_fee_zat > 0
+        || trust.new_bps != TRUST_BPS_FULL
+        || trust.history_bps != TRUST_BPS_FULL
+        || trust.attested_bps != TRUST_BPS_FULL
+    {
+        tracing::warn!(
+            flat_fee_zat = trust.flat_fee_zat,
+            new_bps = trust.new_bps,
+            history_bps = trust.history_bps,
+            attested_bps = trust.attested_bps,
+            history_rides = trust.history_rides,
+            "treasury mechanism is LIVE — payouts are being reduced"
+        );
+    }
+
     let conn = open_db(&db_path)?;
     backfill_lifetime_totals(&conn, zat_per_km, max_payout_zat);
     let state = AppState {
@@ -2597,6 +2864,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         claim_signature_max_age_s,
         ua_daily_meters,
         global_daily_meters,
+        trust,
         payout_lock: Arc::new(tokio::sync::Mutex::new(())),
         auto_payout,
         accrual_mode,
