@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
+import { MilestoneCard } from '../components/MilestoneCard.tsx';
 import { MainnetStatusChip } from '../components/MainnetStatusChip.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
@@ -34,7 +35,6 @@ function zecFromZat(zat: number): string {
 
 export function HomeScreen({ navigation }: { navigation: any }) {
   useUnits(); // re-render when the rider toggles mi/km
-  const [streakDays] = useState<number>(4);
   const [zatPerKm, setZatPerKm] = useState<number>(DEFAULT_ZAT_PER_KM);
   const [lifetimeZat, setLifetimeZat] = useState<number | null>(null);
   const [ridesCount, setRidesCount] = useState<number>(0);
@@ -109,14 +109,10 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         </View>
       </Card>
 
-      <Card>
-        <Text style={styles.cardLabel}>YOUR STREAK</Text>
-        <View style={styles.streakRow}>
-          <Text style={styles.streakNum}>{streakDays}</Text>
-          <Text style={styles.streakUnit}>day streak</Text>
-        </View>
-        <Text style={styles.streakMult}>Multiplier x{(1 + 0.1 * streakDays).toFixed(2)}</Text>
-      </Card>
+      {/* Real streak + verified mileage, computed on-device from banked
+          rides. The card this replaces showed a streak hardcoded to 4 and a
+          "Multiplier x1.40" that existed nowhere in the backend. */}
+      <MilestoneCard records={recent} />
 
       <View style={styles.statsRow}>
         <View style={styles.statCol}>
@@ -354,10 +350,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   rateValue: { color: theme.color.text, fontSize: 14, fontWeight: '700' },
-  streakRow: { flexDirection: 'row', alignItems: 'baseline', gap: theme.space.sm },
-  streakNum: { color: theme.color.text, fontSize: 40, fontWeight: '800' },
-  streakUnit: { color: theme.color.textDim, fontSize: 16, fontWeight: '600' },
-  streakMult: { color: theme.color.success, fontSize: 14, fontWeight: '700', marginTop: 4 },
   statsRow: { flexDirection: 'row', gap: theme.space.lg },
   statCol: { flex: 1 },
   cta: { color: theme.color.text, fontSize: 15, lineHeight: 22 },
