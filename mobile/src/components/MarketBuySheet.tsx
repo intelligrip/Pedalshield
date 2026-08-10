@@ -61,12 +61,24 @@ export function MarketBuySheet({
           <View style={styles.nonCustodial}>
             <Text style={styles.ncTitle}>🔒 Non-custodial</Text>
             <Text style={styles.ncBody}>
-              You pay {item.merchant} directly from your own wallet, privately.
-              Pedalshield never holds your funds or touches your keys.
+              {item.sample
+                ? 'When this is live you will pay the merchant directly from your own wallet. Pedalshield never holds your funds or touches your keys.'
+                : `You pay ${item.merchant} directly from your own wallet, privately. Pedalshield never holds your funds or touches your keys.`}
             </Text>
           </View>
 
-          {!paid ? (
+          {item.sample ? (
+            /* No merchant exists behind a sample listing, and its address is
+               the project treasury. Paying would send real ZEC for nothing. */
+            <View style={styles.pending}>
+              <Text style={styles.pendingTitle}>Example listing</Text>
+              <Text style={styles.pendingBody}>
+                This shows how the marketplace will work — there is no merchant
+                behind it yet, so it cannot be bought. Real shops onboard with
+                their own view-only key and their own address.
+              </Text>
+            </View>
+          ) : !paid ? (
             <>
               <Button
                 label={`Pay ${item.priceZec} ZEC in your wallet`}

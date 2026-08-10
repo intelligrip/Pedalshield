@@ -96,7 +96,12 @@ export function MarketScreen() {
               </View>
             </View>
             <Text style={styles.itemTitle}>{item.title}</Text>
-            <Text style={styles.merchant}>{item.merchant}</Text>
+            <View style={styles.merchantRow}>
+              <Text style={styles.merchant}>{item.merchant}</Text>
+              {item.sample ? (
+                <Text style={styles.exampleTag}>EXAMPLE</Text>
+              ) : null}
+            </View>
             <Text style={styles.blurb}>{item.blurb}</Text>
             <Text style={styles.fulfillment}>{item.fulfillment}</Text>
           </Card>
@@ -104,7 +109,8 @@ export function MarketScreen() {
       ))}
 
       <Text style={styles.footnote}>
-        Sample beta listings. Real merchants onboard with a view-only shop key,
+        These are examples of how the marketplace will work — none can be bought
+        yet. Real merchants onboard with a view-only shop key,
         so they detect your payment on-chain without anyone holding custody.
         Private-native goods (services, digital, vouchers) come first — no
         shipping address required.
@@ -187,6 +193,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     marginTop: theme.space.sm,
+  },
+  merchantRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  exampleTag: {
+    color: theme.color.textMuted,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+    borderWidth: 1,
+    borderColor: theme.color.border,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    overflow: 'hidden',
   },
   merchant: { color: theme.color.textMuted, fontSize: 12, marginTop: 2 },
   blurb: {

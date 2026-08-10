@@ -26,6 +26,15 @@ export interface MarketItem {
   fulfillment: string;
   /** Merchant's Unified Address — payment goes straight here. */
   merchantUA: string;
+  /**
+   * True for illustrative listings with no merchant behind them.
+   *
+   * A sample listing MUST NOT be purchasable. These entries point at the
+   * project treasury address, so a live pay button would take real ZEC from a
+   * rider for a service nobody will fulfil — the one bug in this app that
+   * costs a user money rather than showing them a wrong number.
+   */
+  sample?: boolean;
 }
 
 // Sample beta merchant address (the project treasury UA stands in until real
@@ -44,6 +53,7 @@ export const CATALOG: MarketItem[] = [
       'Brakes, gears, and drivetrain dialed in. Pay privately, redeem the code in-store.',
     fulfillment: 'Redeem code in-store · no shipping, no address',
     merchantUA: SAMPLE_MERCHANT_UA,
+    sample: true,
   },
   {
     id: 'coaching-month',
@@ -55,6 +65,7 @@ export const CATALOG: MarketItem[] = [
       'A personalized training plan delivered to the app. No email, no data trail.',
     fulfillment: 'Delivered in-app',
     merchantUA: SAMPLE_MERCHANT_UA,
+    sample: true,
   },
   {
     id: 'giftcard-25',
@@ -66,6 +77,7 @@ export const CATALOG: MarketItem[] = [
       'A redeemable code toward parts and accessories. Spend your ride earnings on real kit.',
     fulfillment: 'Voucher code · redeem online or in-store',
     merchantUA: SAMPLE_MERCHANT_UA,
+    sample: true,
   },
   {
     id: 'routepack-local',
@@ -77,6 +89,7 @@ export const CATALOG: MarketItem[] = [
       'Curated rides for your area. Bought privately, opened on your device only.',
     fulfillment: 'Delivered in-app',
     merchantUA: SAMPLE_MERCHANT_UA,
+    sample: true,
   },
 ];
 
