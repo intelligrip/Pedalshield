@@ -12,6 +12,93 @@ Pedalshield never holding a cent. It's the strongest possible Zcash demand engin
 (every purchase is another shielded transaction) and it stays true to the mission
 (non-custodial, private, no data).
 
+---
+
+## REVISION (August 2026) — who funds it
+
+_The payment mechanics below are unchanged and still correct. What changes is
+the **funding model**, and it dissolves both blockers this document already
+identified: the two-sided cold start, and merchant onboarding friction._
+
+### The problem with the original framing
+
+Riders earn shielded ZEC and spend it with merchants. That makes the
+marketplace a **crypto spending app**, and it inherits two fatal properties at
+our current size:
+
+- A bike shop has no reason to onboard for a handful of riders holding ~$0.15
+  each. There is no budget behind the demand.
+- A bike shop will not create a dedicated Zcash account and export a UFVK. The
+  design is elegant and asks something of merchants almost none of them will
+  do. (This document already flags the UFVK export gap; the deeper issue is
+  that even a working export is too much to ask.)
+
+### The reframe: the marketplace is where an employer's incentive budget lands
+
+Commute programmes already pay real money — $600 for 80 bike commutes, $5/day
+to bike to campus — disbursed today as gift cards and reimbursements, on
+**self-reported** data.
+
+Pedalshield already verifies the trip. So route the reward as well as measure
+it: **the employer funds it, the rider earns it, a local bike shop captures
+it.**
+
+Three things resolve at once:
+
+- **Sustainability.** Rewards stop coming out of a founder-funded treasury.
+  The party with a legal obligation and a budget line pays for them.
+- **Cold start.** Merchants join because committed budget is attached, not
+  because speculative users might show up. You can sign a Bend shop before you
+  have a single rider by saying an employer has $X redeemable there.
+- **Mission.** Value flows *into* the local cycling economy rather than out of
+  Pedalshield's pocket. A bike shop gains customers; a rider gains something
+  worth more than dust.
+
+### Consequence: two merchant tiers
+
+**Tier 1 — voucher. No crypto for the merchant.** The rider redeems a code
+in-store. The code proves entitlement and carries **no identity** — it says
+"someone earned this," never who. The merchant validates it and is settled in
+USD. Zero onboarding friction; works with any shop in Bend today. **This is
+what launches.**
+
+**Tier 2 — direct ZEC.** Exactly the design below: UFVK shop, per-order
+derived address, view-only detection, non-custodial both ends. For merchants
+who want it, and for riders spending their own earned ZEC rather than an
+employer's budget.
+
+Naming the tension honestly: **employer budgets are USD and merchants want
+USD.** Forcing ZEC settlement puts volatility, accounting and tax friction onto
+a bike shop for no benefit to the shop. The voucher preserves rider privacy
+while letting money settle in the currency everyone already uses. ZEC stays the
+right rail for the rider's own private earnings — it is the wrong rail for
+reimbursing a merchant on a corporate budget.
+
+Tier 1 also sidesteps the App Store problem noted below: a voucher redeemed
+in-store for a real-world service is outside Apple's IAP requirement, which
+covers digital content consumed in-app.
+
+### Launch gate (hard)
+
+**Do not ship a marketplace before it has a funder.** An empty marketplace with
+example listings is not a preview, it is a liability — the beta shipped four
+sample listings with live "Pay" buttons pointing at the project treasury, which
+could have taken real ZEC from a rider for a service nobody would fulfil
+(defused Aug 2026; listings are now non-purchasable and badged EXAMPLE).
+
+The marketplace goes live **with** the first pilot: that pilot's budget behind
+it, and three to five local shops signed. Not before.
+
+### Revised sequence
+
+1. Pilot conversation (Commute Options, OSU-Cascades, a Bend employer)
+2. Employer or programme commits an incentive budget
+3. Sign 3–5 Bend bike shops on the **voucher tier**
+4. Marketplace launches with real listings and real money behind them
+5. **Tier 2** (direct ZEC) follows, for riders spending their own earnings
+
+---
+
 ## The payment pattern (borrowed from Paid Private File)
 
 1. **Merchant creates a shop** with a **view-only key (UFVK)** from a *dedicated* ZEC
@@ -57,14 +144,19 @@ for things that do. So lead with the former:
 - **Spend your accrued balance.** Optionally let riders apply accrued carbon rewards toward
   a purchase, making the dust rewards feel real (the redemption destination the rewards lacked).
 
-## Phasing (don't boil the ocean)
+## Phasing (superseded — see REVISION above)
 
-- **Phase 1 — redemption/affiliate (cheapest, now-ish):** partner discount codes + links;
-  riders redeem accrued ZEC value for gear discounts. No in-app payments, no merchant
-  onboarding. Proves demand.
+The original phasing assumed rider-funded demand. It is kept here for context;
+the operative plan is the revised sequence at the top.
+
+- ~~**Phase 1 — redemption/affiliate:** partner discount codes + links; riders
+  redeem accrued ZEC value for gear discounts.~~ Replaced by the **voucher
+  tier**, which is the same low-friction shape but funded by an employer rather
+  than by discounting on speculation.
 - **Phase 2 — the private marketplace (this design):** merchant shops via UFVK,
   per-order addresses, view-only detection, services + digital goods + vouchers.
-- **Phase 3 — physical goods** with privacy-preserving fulfillment.
+  Now **Tier 2**, and explicitly optional per merchant.
+- **Phase 3 — physical goods** with privacy-preserving fulfillment. Unchanged.
 
 ## Honest risks / open questions
 
@@ -72,8 +164,8 @@ for things that do. So lead with the former:
   export a UFVK yet** — only Zingo!/Zkool do. So merchant onboarding is constrained to those
   wallets until Zodl adds UFVK export. (Another concrete thing to raise with ZODL.)
 - **Two-sided cold start.** A marketplace needs *merchants and buyers*. With ~zero users,
-  this is two bootstraps at once — which is why Phase 1 (affiliate/redemption, supply-light)
-  comes first.
+  this is two bootstraps at once. **Addressed by the revision:** an employer's committed
+  budget is the demand side, so merchants can be signed before riders exist.
 - **Apple's rules.** In-app crypto payments for goods/services sit in a fraught corner of
   App Store policy (IAP, crypto, physical vs digital). This needs careful review before it
   ships in the iOS app — it could threaten your store standing. (Web-based checkout may be
