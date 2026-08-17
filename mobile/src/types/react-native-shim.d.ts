@@ -261,8 +261,35 @@ declare module 'react-native-maps' {
 }
 
 declare module 'expo-sensors' {
+  type XYZ = { x: number; y: number; z: number };
+  type Sub = { remove(): void };
+
   export const Accelerometer: {
     setUpdateInterval(ms: number): void;
-    addListener(cb: (d: { x: number; y: number; z: number }) => void): { remove(): void };
+    addListener(cb: (d: XYZ) => void): Sub;
+  };
+
+  /** Rotation. Feeds anti-cheat v6's lean-turn coupling — the check that a
+   *  replayed GPS track can't satisfy without also faking rotation. */
+  export const Gyroscope: {
+    setUpdateInterval(ms: number): void;
+    addListener(cb: (d: XYZ) => void): Sub;
+  };
+
+  /** Barometric pressure. Cross-checks GPS altitude, which is noisy and easy
+   *  to fake. Not present on every device. */
+  export const Barometer: {
+    isAvailableAsync(): Promise<boolean>;
+    setUpdateInterval(ms: number): void;
+    addListener(
+      cb: (d: { pressure: number; relativeAltitude?: number }) => void,
+    ): Sub;
+  };
+
+  /** Step counting, for the walking gate. Requires Motion & Fitness. */
+  export const Pedometer: {
+    isAvailableAsync(): Promise<boolean>;
+    requestPermissionsAsync?(): Promise<{ status: string }>;
+    watchStepCount(cb: (r: { steps: number }) => void): Sub;
   };
 }

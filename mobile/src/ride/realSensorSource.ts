@@ -76,6 +76,12 @@ export class RealSensorSource {
   private session: RideSession | null = null;
   private geoSub: { remove(): void } | null = null;
   private accelSub: { remove(): void } | null = null;
+  private gyroSub: { remove(): void } | null = null;
+  private baroSub: { remove(): void } | null = null;
+  private pedoSub: { remove(): void } | null = null;
+  /** Latest gyro reading, attached to each accelerometer sample so the two
+   *  arrive as one coherent motion series rather than two streams. */
+  private lastGyro = { x: 0, y: 0, z: 0 };
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private gate: GpsGate | null = null;
   private autoPause = new AutoPauseDetector();
@@ -104,6 +110,12 @@ export class RealSensorSource {
     this.geoSub = null;
     this.accelSub?.remove();
     this.accelSub = null;
+    this.gyroSub?.remove();
+    this.gyroSub = null;
+    this.baroSub?.remove();
+    this.baroSub = null;
+    this.pedoSub?.remove();
+    this.pedoSub = null;
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
@@ -116,7 +128,8 @@ export class RealSensorSource {
   private async init(): Promise<void> {
     try {
       const Location = await import('expo-location');
-      const { Accelerometer } = await import('expo-sensors');
+      const { Accelerometer, Gyroscope, Barometer, Pedometer } =
+        await import('expo-sensors');
 
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -211,8 +224,21 @@ export class RealSensorSource {
         },
       );
 
-      // Accelerometer -> motion samples (cadence). expo reports in g; the
-      // verifier expects m/s^2 like the synthetic source, so scale up.
+      // Gyroscope -> the rotation half of every motion sample.
+      //
+      // This was previously hardcoded to {0,0,0}, which silently disabled
+      // anti-cheat v6's leanTurnCoupling: the engine correlates GPS turn rate
+      // against gyro activity, a flat series fails the dynamic-range gate, and
+      // the check scored neutral on every real ride. The engine was right; the
+      // sensor was never connected. Latest reading is held and attached to
+      // each accelerometer sample so the two stay in one time series.
+      Gyroscope.setUpdateInterval(50); // ~20 Hz, matched to the accelerometer
+      this.gyroSub = Gyroscope.addListener((d) => {
+        this.lastGyro = { x: d.x, y: d.y, z: d.z };
+      });
+
+      // Accelerometer -> motion samples (cadence, road vibration). expo
+      // reports in g; the verifier expects m/s^2 like the synthetic source.
       Accelerometer.setUpdateInterval(50); // ~20 Hz
       this.accelSub = Accelerometer.addListener((d) => {
         if (!this.session) return;
@@ -220,12 +246,76 @@ export class RealSensorSource {
           this.session.addMotionSample({
             timestamp: Date.now(),
             accel: { x: d.x * GRAVITY, y: d.y * GRAVITY, z: d.z * GRAVITY },
-            gyro: { x: 0, y: 0, z: 0 },
+            gyro: { ...this.lastGyro },
           });
         } catch {
           this.stop();
         }
       });
+
+      // Barometer -> elevation cross-check. GPS altitude is noisy and easy to
+      // fake; barometric pressure is neither, so disagreement between the two
+      // is a spoofing signal the engine already scores (elevationConsistency)
+      // and was never receiving. Not present on every device — absence is
+      // handled as "no evidence", never as guilt.
+      try {
+        if (await Barometer.isAvailableAsync()) {
+          Barometer.setUpdateInterval(1000); // 1 Hz is plenty for elevation
+          this.baroSub = Barometer.addListener((d: any) => {
+            if (!this.session) return;
+            try {
+              this.session.addBarometerSample({
+                timestamp: Date.now(),
+                pressure: d.pressure,
+                relativeAltitude: Number(d.relativeAltitude ?? 0),
+              });
+            } catch {
+              /* a bad barometer must never end a ride */
+            }
+          });
+        }
+      } catch {
+        /* device without a barometer — fine */
+      }
+
+      // Pedometer -> the walking gate. constants.ts notes the verify threshold
+      // was lowered 0.68 -> 0.62 partly because "missing Motion & Fitness
+      // permission halves the no-walk credit, costing legit rides ~0.15". It
+      // was not missing by permission: it was never subscribed. Wiring it back
+      // should raise honest scores and let that threshold rise again.
+      try {
+        const pedoPerm = await Pedometer.requestPermissionsAsync?.();
+        const pedoOk =
+          (await Pedometer.isAvailableAsync()) &&
+          (!pedoPerm || pedoPerm.status === 'granted');
+        if (pedoOk) {
+          let windowStart = Date.now();
+          let windowSteps = 0;
+          this.pedoSub = Pedometer.watchStepCount((r: { steps: number }) => {
+            if (!this.session) return;
+            windowSteps += r.steps;
+            const now = Date.now();
+            // Bank a window a minute at a time; the engine wants rates, not
+            // a running total.
+            if (now - windowStart >= 60_000) {
+              try {
+                this.session.addPedometerWindow({
+                  startTime: windowStart,
+                  endTime: now,
+                  steps: windowSteps,
+                });
+              } catch {
+                /* never end a ride over step data */
+              }
+              windowStart = now;
+              windowSteps = 0;
+            }
+          });
+        }
+      } catch {
+        /* permission refused or unsupported — the engine treats this as
+           no evidence, and the walking gate stays pedometer-independent */
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('Pedalshield: sensor init failed', e);

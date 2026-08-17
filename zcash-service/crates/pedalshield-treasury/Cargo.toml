@@ -44,6 +44,14 @@ tiny-bip39 = "1"
 
 rand   = "0.8"
 sha2   = "0.10"
+# App Attest verification (security v0.8, Tier 0). Verifies Apple's
+# attestation object locally — CBOR decode, certificate chain to Apple's
+# root, nonce binding, App ID hash, key-id match. default-features = false
+# drops the crate's reqwest-based root-cert fetcher: we load the PEM from
+# disk instead, so the backend makes no HTTP call at startup and gains no
+# HTTP client dependency.
+appattest = { version = "0.1", default-features = false }
+
 # Rider claim signing (security v0.7): verify Ed25519 signatures over the
 # canonical claim message. Riders hold the private key in the phone's
 # Secure Enclave-protected keychain; only public keys reach the server.

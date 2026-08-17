@@ -36,6 +36,30 @@ let _last: CrashRecord | null = null;
 let _installed = false;
 
 /** Install the global handler. Idempotent; call once at app boot. */
+/**
+ * Strip anything coordinate-shaped from crash text before it is written to
+ * disk.
+ *
+ * A crash report is the one place a route can leak by accident: an error
+ * thrown inside the verification pipeline may embed sample values in its
+ * message ("invalid fix at 44.0582, -121.3153"), and this record is persisted
+ * to AsyncStorage and displayed on the next launch. The route is otherwise
+ * RAM-only; it should not survive a crash either.
+ *
+ * Deliberately aggressive — a redacted stack trace is still debuggable, a
+ * leaked coordinate is not retractable.
+ */
+export function redactCoordinates(text: string): string {
+  return (
+    text
+      // Signed decimals with 4+ places: precise enough to place someone.
+      .replace(/-?\d{1,3}\.\d{4,}/g, '[redacted]')
+      // Explicitly labelled fields, whatever their precision.
+      .replace(/\b(lat|lon|lng|latitude|longitude)\b\s*[:=]\s*-?[\d.]+/gi,
+               '$1=[redacted]')
+  );
+}
+
 export function installCrashRecorder(getAppState?: () => string): void {
   if (_installed) return;
   _installed = true;
@@ -47,8 +71,8 @@ export function installCrashRecorder(getAppState?: () => string): void {
     try {
       const e = error as Error;
       const rec: CrashRecord = {
-        message: String(e?.message ?? error),
-        stack: String(e?.stack ?? '').slice(0, 4000),
+        message: redactCoordinates(String(e?.message ?? error)),
+        stack: redactCoordinates(String(e?.stack ?? '')).slice(0, 4000),
         isFatal: !!isFatal,
         at: Date.now(),
         appState: getAppState ? getAppState() : 'unknown',
