@@ -2,6 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Card } from '../components/Card.tsx';
 import { MilestoneCard } from '../components/MilestoneCard.tsx';
+import { CompanionCard } from '../components/CompanionCard.tsx';
+import {
+  getCompanionPrefs,
+  onCompanionChange,
+} from '../prefs/companion.ts';
 import { MainnetStatusChip } from '../components/MainnetStatusChip.tsx';
 import { ScreenContainer } from '../components/ScreenContainer.tsx';
 import { Stat } from '../components/Stat.tsx';
@@ -38,6 +43,8 @@ export function HomeScreen({ navigation }: { navigation: any }) {
   const [zatPerKm, setZatPerKm] = useState<number>(DEFAULT_ZAT_PER_KM);
   const [lifetimeZat, setLifetimeZat] = useState<number | null>(null);
   const [ridesCount, setRidesCount] = useState<number>(0);
+  const [companion, setCompanion] = useState(getCompanionPrefs());
+  useEffect(() => onCompanionChange(setCompanion), []);
   const [summary, setSummary] = useState<HistorySummary>(getSummary());
   const [recent, setRecent] = useState<RideRecord[]>(getRides());
 
@@ -109,10 +116,10 @@ export function HomeScreen({ navigation }: { navigation: any }) {
         </View>
       </Card>
 
-      {/* Real streak + verified mileage, computed on-device from banked
-          rides. The card this replaces showed a streak hardcoded to 4 and a
-          "Multiplier x1.40" that existed nowhere in the backend. */}
-      <MilestoneCard records={recent} />
+      {/* The core loop: your bike is alive and miles are what it eats.
+          Cyclists already name their bikes — this gives that attachment
+          somewhere to live. One number, one picture, one thing to want. */}
+      <CompanionCard records={recent} name={companion.name} />
 
       <View style={styles.statsRow}>
         <View style={styles.statCol}>

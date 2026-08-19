@@ -23,6 +23,9 @@ import { addRide } from '../ride/rideHistory.ts';
 import { getPrivateRidePrefs } from '../prefs/privateRide.ts';
 import { RideStatsCard } from '../components/RideStatsCard.tsx';
 import { VerdictCard } from '../components/VerdictCard.tsx';
+import { FedCard } from '../components/FedCard.tsx';
+import { getCompanionPrefs } from '../prefs/companion.ts';
+import { getRides } from '../ride/rideHistory.ts';
 import type { RawRide } from '../verification/types.ts';
 import {
   RealSensorSource,
@@ -585,6 +588,19 @@ function PostRide({
           showWatermark={false}
         />
       </View>
+
+      {/* The payoff, first. This two-second moment is the loop the app is
+          built around — it sits above the score and the payout because the
+          feeling is what brings a rider back and the zatoshi never will. */}
+      <FedCard
+        name={getCompanionPrefs().name}
+        verifiedKm={result.verifiedKm}
+        elevationGainM={report?.elevationGainM ?? 0}
+        durationS={report?.movingS ?? 0}
+        avgKmh={report?.avgMovingKmh ?? 0}
+        history={getRides().filter((r) => r.id !== result.rideId)}
+        rejected={result.status === 'rejected'}
+      />
 
       <Card accent>
         <ScoreReveal

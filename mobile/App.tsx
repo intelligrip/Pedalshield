@@ -17,6 +17,7 @@ import { loadRideHistory } from './src/ride/rideHistory.ts';
 import { loadDataCoopPrefs } from './src/prefs/dataCoop.ts';
 import { loadPrivateRidePrefs } from './src/prefs/privateRide.ts';
 import { ensureDeviceIdentity } from './src/wallet/deviceIdentity.ts';
+import { loadCompanionPrefs } from './src/prefs/companion.ts';
 import {
   clearLastCrash,
   getLastCrash,
@@ -151,6 +152,7 @@ export default function App() {
     void loadRideHistory(); // restore banked rides (history + YTD)
     void loadDataCoopPrefs(); // restore data co-op opt-in (defaults OFF)
     void loadPrivateRidePrefs(); // restore ghost-ride checklist state
+    void loadCompanionPrefs(); // restore the bike's name before Home renders
     // Establish the device identity + hardware attestation at LAUNCH rather
     // than lazily on the first claim. Previously this only ran inside
     // signClaim(), which meant a device was never attested until it had
