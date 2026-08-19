@@ -68,6 +68,18 @@ export function cueFinish(): void {
 }
 
 /** A distance milestone, e.g. cueSplit(3, 'mi') → buzz + "3 miles". */
+/**
+ * A companion milestone crossed mid-ride.
+ *
+ * The only coaching audio that exists, because it is the only mid-ride event
+ * rare and real enough to earn an interruption. Rate limiting and the opening
+ * quiet period are enforced in coach.ts, not here.
+ */
+export function cueMilestone(text: string): void {
+  void haptic('heavy');
+  void speak(text);
+}
+
 export function cueSplit(n: number, unit: 'km' | 'mi'): void {
   void haptic('heavy');
   const word = unit === 'mi' ? 'mile' : 'kilometer';

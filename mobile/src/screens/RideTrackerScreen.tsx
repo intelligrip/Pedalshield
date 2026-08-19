@@ -51,7 +51,11 @@ import {
   cuePause,
   cueResume,
   cueSplit,
+  cueMilestone,
 } from '../ride/cues.ts';
+import { midRideCue, preRideNudge } from '../ride/coach.ts';
+import { STAGES } from '../prefs/companion.ts';
+import { verifiedMiles } from '../ride/milestones.ts';
 const ATT = {
   platform: 'android' as const,
   token: 'demo-attestation',
@@ -65,6 +69,10 @@ export function RideTrackerScreen() {
   const sessionRef = useRef<RideSession>(new RideSession(ATT));
   const sourceRef = useRef<SensorSource | null>(null);
   const splitRef = useRef<SplitTracker>(new SplitTracker());
+  /** Verified miles banked before this ride — fixed at start so a milestone
+   *  can only be crossed once. */
+  const milesBeforeRef = useRef(0);
+  const lastCueAtRef = useRef<number | null>(null);
   const [snap, setSnap] = useState<RideSessionSnapshot>(
     sessionRef.current.snapshot(),
   );
@@ -83,6 +91,8 @@ export function RideTrackerScreen() {
 
   function startRide() {
     splitRef.current.reset();
+    milesBeforeRef.current = verifiedMiles(getRides());
+    lastCueAtRef.current = null;
     sourceRef.current = new RealSensorSource();
     sessionRef.current.start();
     sourceRef.current.start(sessionRef.current);
@@ -122,6 +132,28 @@ export function RideTrackerScreen() {
     if (!riding) return;
     const reached = splitRef.current.update(kmToDisplay(snap.stats.liveKm));
     for (const n of reached) cueSplit(n, distanceUnit());
+  }, [snap.stats.liveKm, riding]);
+
+  // Coach: audio only, and only for a companion milestone crossed mid-ride.
+  // Everything about when it is allowed to speak lives in coach.ts — silent
+  // for the opening minutes while the rider is merging into traffic, and
+  // rate-limited after that.
+  useEffect(() => {
+    if (!riding) return;
+    const line = midRideCue({
+      elapsedS: snap.stats.elapsedS,
+      liveKm: snap.stats.liveKm,
+      milesBefore: milesBeforeRef.current,
+      sinceLastCueS:
+        lastCueAtRef.current === null
+          ? null
+          : (Date.now() - lastCueAtRef.current) / 1000,
+      milestones: STAGES.map((st) => st.miles).filter((m) => m > 0),
+    });
+    if (line) {
+      cueMilestone(line);
+      lastCueAtRef.current = Date.now();
+    }
   }, [snap.stats.liveKm, riding]);
 
   // Repaint live stats (elapsed clock) once per second while active.
@@ -215,6 +247,14 @@ export function RideTrackerScreen() {
       <View style={styles.actions}>
         {snap.state === 'idle' && (
           <>
+            {/* Coaching that can be READ, shown only while stopped. Sparse by
+                design — null is the common and correct case. */}
+            {(() => {
+              const nudge = preRideNudge(getRides());
+              return nudge ? (
+                <Text style={styles.coachNudge}>{nudge}</Text>
+              ) : null;
+            })()}
             <Button label="Start ride" size="lg" onPress={requestStartRide} />
             <Pressable
               onPress={() => setGhostOpen(true)}
@@ -658,6 +698,12 @@ const styles = StyleSheet.create({
     color: theme.color.textDim,
     fontSize: 13,
     fontWeight: '600',
+  },
+  coachNudge: {
+    color: theme.color.accent,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: theme.space.md,
   },
   headerRow: {
     flexDirection: 'row',
