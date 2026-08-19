@@ -127,26 +127,46 @@ export function MapPacksCard() {
   );
 }
 
+/**
+ * Progress the rider can trust. When the server sends no Content-Length there
+ * is no percentage to show, and a frozen "0%" reads as broken — so fall back
+ * to counting megabytes, which proves something is happening.
+ */
+function describeProgress(fraction: number, bytes: number): string {
+  if (fraction > 0) return `Downloading… ${Math.round(fraction * 100)}%`;
+  if (bytes > 0) return `Downloading… ${(bytes / 1e6).toFixed(1)} MB`;
+  return 'Starting…';
+}
+
 function PackRow({ pack }: { pack: RegionPack }) {
   const state = getPackState(pack.id);
   return (
     <View style={styles.row}>
       <View style={styles.rowText}>
         <Text style={styles.packName}>{pack.name}</Text>
-        <Text style={styles.packMeta}>
+        <Text
+          style={[
+            styles.packMeta,
+            state.status === 'error' ? styles.packMetaError : null,
+          ]}
+        >
           {state.status === 'downloaded'
             ? 'Downloaded · maps fully offline here'
             : state.status === 'downloading'
-              ? `Downloading… ${Math.round(state.progress * 100)}%`
-              : `~${pack.approxMB} MB`}
+              ? describeProgress(state.progress, state.bytes)
+              : state.status === 'error'
+                ? state.message
+                : `~${pack.approxMB} MB`}
         </Text>
       </View>
-      {state.status === 'none' ? (
+      {state.status === 'none' || state.status === 'error' ? (
         <Pressable
           style={styles.action}
           onPress={() => void downloadPack(pack)}
         >
-          <Text style={styles.actionText}>Get</Text>
+          <Text style={styles.actionText}>
+            {state.status === 'error' ? 'Retry' : 'Get'}
+          </Text>
         </Pressable>
       ) : state.status === 'downloaded' ? (
         <Pressable
@@ -160,7 +180,7 @@ function PackRow({ pack }: { pack: RegionPack }) {
       ) : (
         <View style={[styles.action, styles.actionGhost]}>
           <Text style={[styles.actionText, styles.actionTextGhost]}>
-            {Math.round(state.progress * 100)}%
+            {state.progress > 0 ? `${Math.round(state.progress * 100)}%` : '···'}
           </Text>
         </View>
       )}
@@ -193,6 +213,7 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   packName: { color: theme.color.text, fontSize: 15, fontWeight: '600' },
   packMeta: { color: theme.color.textMuted, fontSize: 12, marginTop: 2 },
+  packMetaError: { color: theme.color.warning },
   action: {
     backgroundColor: theme.color.accent,
     borderRadius: theme.radius.pill,
