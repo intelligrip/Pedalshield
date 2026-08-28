@@ -24,10 +24,10 @@ import {
 } from '../lib/api.ts';
 import {
   BACKEND_URL,
-  EXPLORER_TX_BASE,
   getRecipientUA,
   setRecipientUA,
 } from '../lib/config.ts';
+import { proofPageUrl } from '../lib/proof.ts';
 import { validateZcashUA } from '../wallet/connectedWallet.ts';
 import { updateRideTxid } from '../ride/rideHistory.ts';
 import { signClaim } from '../wallet/deviceIdentity.ts';
@@ -111,10 +111,13 @@ export function PayoutCard({
   rideId,
   distanceM,
   integrityScore = 0,
+  durationSeconds,
 }: {
   rideId: string;
   distanceM: number;
   integrityScore?: number;
+  /** Wall-clock duration from ClaimPayload timestamps; omit avg speed if missing. */
+  durationSeconds?: number;
 }) {
   const [ua, setUa] = useState(getRecipientUA());
   const [phase, setPhase] = useState<Phase>('idle');
@@ -227,6 +230,12 @@ export function PayoutCard({
         ...(signed
           ? { rider_id: signed.rider_id, signed_at: signed.signed_at }
           : {}),
+        ...(Number.isFinite(integrityScore)
+          ? { integrity_score: integrityScore }
+          : {}),
+        ...(durationSeconds != null && durationSeconds > 0
+          ? { duration_seconds: Math.round(durationSeconds) }
+          : {}),
       });
       if (ack.status === 'accrued') {
         // Accrual mode: no per-ride on-chain payout. Show balance + option to force settle.
@@ -314,9 +323,9 @@ export function PayoutCard({
           </Text>
           <Pressable
             style={styles.linkRow}
-            onPress={() => void Linking.openURL(EXPLORER_TX_BASE + txid)}
+            onPress={() => void Linking.openURL(proofPageUrl(txid))}
           >
-            <Text style={styles.linkText}>View on explorer ›</Text>
+            <Text style={styles.linkText}>proof ›</Text>
           </Pressable>
           <ShareCard
             distanceM={distanceM}

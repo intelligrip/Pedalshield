@@ -7,6 +7,12 @@
   publish = "landing"
   command = ""
 
+# Pretty /proof/<txid> URLs on the static host (GitHub Pages uses 404.html).
+[[redirects]]
+  from = "/proof/*"
+  to = "/proof/index.html"
+  status = 200
+
 # Make the bare domain land on the waitlist page too (pedalshield.app → /beta/).
 [[redirects]]
   from = "/"

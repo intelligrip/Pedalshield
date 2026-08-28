@@ -28,9 +28,10 @@
 //!     POST /claims/{id}/reject            operator action: reject a claim with a reason
 //!     POST /settle                        accrual mode: run one settlement sweep now
 //!     POST /withdraw/{ua}                 accrual mode: settle a recipient's balance now
+//!     GET  /proof/{txid}                  public ride receipt (JSON, or HTML if Accept: text/html)
 //!
-//! All endpoints return JSON. Errors use HTTP status codes (400 / 404 /
-//! 500) with a JSON body `{ "error": "..." }`.
+//! All endpoints return JSON unless noted. Errors use HTTP status codes
+//! (400 / 404 / 500) with a JSON body `{ "error": "..." }`.
 
 use std::env;
 use std::net::SocketAddr;
@@ -40,7 +41,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Path, Query, Request, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -48,6 +49,7 @@ use axum::{
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
@@ -124,6 +126,18 @@ struct NewClaim {
     rider_id: Option<String>,
     /// Unix seconds the claim was signed (replay window).
     signed_at: Option<u64>,
+    /// Integrity score from the on-device verifier (0..=1). Already part of
+    /// the public ClaimPayload; stored so the public proof page can show it.
+    /// Optional so older app builds keep working.
+    #[serde(default)]
+    integrity_score: Option<f64>,
+    /// Wall-clock ride duration in seconds, derived from ClaimPayload
+    /// `startedAt`/`endedAt`. Used only to compute average speed on the
+    /// public proof page. We store the duration, never the timestamps —
+    /// those would fingerprint time of day. Optional; omitted rather than
+    /// widening ClaimPayload.
+    #[serde(default)]
+    duration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -157,6 +171,14 @@ struct ClaimRow {
     trust_bps: Option<u32>,
     created_at: u64,
     updated_at: u64,
+    /// On-device integrity score (0..=1). Absent on claims submitted
+    /// before the public proof page existed.
+    #[serde(default)]
+    integrity_score: Option<f64>,
+    /// Wall-clock duration in seconds. Absent on older claims; the public
+    /// page omits average speed rather than inventing one.
+    #[serde(default)]
+    duration_seconds: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -298,6 +320,19 @@ fn validate_distance(d: u64) -> Result<(), AppError> {
         )));
     }
     Ok(())
+}
+
+/// Drop an integrity score that isn't a real 0..=1 value rather than
+/// rejecting the claim — a proof-page field must never fail a payout.
+fn sanitize_integrity_score(v: Option<f64>) -> Option<f64> {
+    v.filter(|s| s.is_finite() && (0.0..=1.0).contains(s))
+        .map(|s| (s * 100.0).round() / 100.0)
+}
+
+/// Drop absurd durations. Cap is 24h, matching the per-claim distance cap
+/// being a single ride, not a multi-day tour stored as one claim.
+fn sanitize_duration_seconds(v: Option<u64>) -> Option<u64> {
+    v.filter(|d| *d > 0 && *d <= 24 * 60 * 60)
 }
 
 fn now_secs() -> u64 {
@@ -449,6 +484,15 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     let _ = conn.execute("ALTER TABLE claims ADD COLUMN payout_gross_zat INTEGER", []);
     let _ = conn.execute("ALTER TABLE claims ADD COLUMN payout_withheld_zat INTEGER", []);
     let _ = conn.execute("ALTER TABLE claims ADD COLUMN trust_bps INTEGER", []);
+    // Public proof page: attested stats that already leave the phone in
+    // ClaimPayload (integrity) or are derived from it (duration from
+    // startedAt/endedAt). Additive; ignored when the column exists.
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN integrity_score REAL", []);
+    let _ = conn.execute("ALTER TABLE claims ADD COLUMN duration_seconds INTEGER", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_claims_payout_txid ON claims(payout_txid)",
+        [],
+    );
 
     // --- Crash recovery: un-stick claims abandoned mid-payout ----------
     // A claim moves pending -> paying before the (slow) scan + prove +
@@ -866,8 +910,8 @@ fn insert_claim(conn: &Connection, c: &ClaimRow) -> Result<(), rusqlite::Error> 
         "INSERT INTO claims
             (id, recipient_ua, distance_meters, signature, attestation,
              status, payout_txid, rejection_reason, created_at, updated_at,
-             rider_id, signed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             rider_id, signed_at, integrity_score, duration_seconds)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             c.id,
             c.recipient_ua,
@@ -881,6 +925,8 @@ fn insert_claim(conn: &Connection, c: &ClaimRow) -> Result<(), rusqlite::Error> 
             c.updated_at as i64,
             c.rider_id,
             c.signed_at.map(|t| t as i64),
+            c.integrity_score,
+            c.duration_seconds.map(|t| t as i64),
         ],
     )?;
     Ok(())
@@ -1135,7 +1181,222 @@ fn row_to_claim(row: &rusqlite::Row) -> rusqlite::Result<ClaimRow> {
         payout_gross_zat: row.get::<_, Option<i64>>(11).unwrap_or(None).map(|v| v as u64),
         payout_withheld_zat: row.get::<_, Option<i64>>(12).unwrap_or(None).map(|v| v as u64),
         trust_bps: row.get::<_, Option<i64>>(13).unwrap_or(None).map(|v| v as u32),
+        // Not selected by the positional payout queries; proof lookup uses
+        // fetch_public_proof instead of this mapper.
+        integrity_score: None,
+        duration_seconds: None,
     })
+}
+
+// ---------------------------------------------------------------------
+// Public proof page (txid → attested stats, no geo / no wallet)
+// ---------------------------------------------------------------------
+
+const EXPLORER_TX_BASE: &str = "https://mainnet.zcashexplorer.app/transactions/";
+
+/// Public receipt for a paid ride. Deliberately omits recipient UA, rider
+/// id, claim id (ULIDs encode time), created_at (time of day), signature,
+/// and anything that could reconstruct a route or local loop.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+struct PublicProof {
+    txid: String,
+    distance_meters: u64,
+    verified: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    integrity_score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payout_zat: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    avg_speed_kmh: Option<f64>,
+    explorer_url: String,
+}
+
+fn avg_speed_kmh(distance_meters: u64, duration_seconds: u64) -> Option<f64> {
+    if duration_seconds == 0 {
+        return None;
+    }
+    let kmh = (distance_meters as f64 / 1000.0) / (duration_seconds as f64 / 3600.0);
+    if !kmh.is_finite() || kmh < 0.0 {
+        return None;
+    }
+    Some((kmh * 10.0).round() / 10.0)
+}
+
+fn explorer_url_for(txid: &str) -> String {
+    format!("{EXPLORER_TX_BASE}{txid}")
+}
+
+fn fetch_public_proof(
+    conn: &Connection,
+    txid: &str,
+) -> Result<Option<PublicProof>, rusqlite::Error> {
+    let row: Option<(i64, String, Option<i64>, Option<f64>, Option<i64>)> = conn
+        .query_row(
+            "SELECT distance_meters, status, payout_zat, integrity_score, duration_seconds
+             FROM claims
+             WHERE lower(payout_txid) = lower(?1) AND status = 'paid'
+             LIMIT 1",
+            params![txid],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                ))
+            },
+        )
+        .optional()?;
+    Ok(row.map(|(meters, status, payout_zat, integrity, duration)| {
+        let duration = duration.and_then(|d| u64::try_from(d).ok());
+        PublicProof {
+            txid: txid.to_ascii_lowercase(),
+            distance_meters: meters.max(0) as u64,
+            verified: status == "paid",
+            integrity_score: sanitize_integrity_score(integrity),
+            payout_zat: payout_zat.and_then(|v| u64::try_from(v).ok()).filter(|v| *v > 0),
+            avg_speed_kmh: duration.and_then(|d| avg_speed_kmh(meters.max(0) as u64, d)),
+            explorer_url: explorer_url_for(&txid.to_ascii_lowercase()),
+        }
+    }))
+}
+
+fn wants_html(headers: &HeaderMap) -> bool {
+    let accept = headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    // Browsers send text/html first. fetch() from the marketing site sets
+    // Accept: application/json so it gets the machine-readable receipt.
+    let html = accept.split(',').next().unwrap_or("").trim();
+    html.starts_with("text/html")
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn render_proof_html(proof: &PublicProof) -> String {
+    let txid = html_escape(&proof.txid);
+    let explorer = html_escape(&proof.explorer_url);
+    let km = proof.distance_meters as f64 / 1000.0;
+    let miles = km / 1.609344;
+    let dist = if km < 1.0 {
+        format!("{} m", proof.distance_meters)
+    } else {
+        format!("{km:.2} km")
+    };
+    let dist_alt = format!("{miles:.2} mi");
+    let integrity = proof
+        .integrity_score
+        .map(|s| format!("{s:.2}"))
+        .unwrap_or_else(|| "—".into());
+    let speed = proof
+        .avg_speed_kmh
+        .map(|v| format!("{v:.1} km/h"))
+        .unwrap_or_else(|| "—".into());
+    let payout = match proof.payout_zat {
+        Some(zat) if zat > 0 => {
+            let s = format!("{:.8}", zat as f64 / 1e8);
+            let s = s.trim_end_matches('0').trim_end_matches('.').to_string();
+            format!("{s} ZEC")
+        }
+        _ => "—".into(),
+    };
+    let verified = if proof.verified { "Verified" } else { "Unverified" };
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ride proof — Pedalshield</title>
+<meta name="robots" content="noindex" />
+<style>
+  :root {{ --bg:#0B1512; --panel:#132420; --line:rgba(255,255,255,.09);
+    --mint:#2BD99F; --ink:#EAF6F0; --muted:#93A8A0; --dim:#6E8079; }}
+  * {{ box-sizing:border-box; margin:0; padding:0 }}
+  body {{ font-family: Inter, system-ui, sans-serif; background:var(--bg); color:var(--ink);
+    line-height:1.55; min-height:100vh; padding:32px 20px 64px; }}
+  .wrap {{ max-width:560px; margin:0 auto; }}
+  .brand {{ font-weight:800; letter-spacing:-.02em; font-size:1.2rem; }}
+  .brand span {{ color:var(--mint); }}
+  h1 {{ font-size:1.7rem; font-weight:800; letter-spacing:-.03em; margin:28px 0 10px; }}
+  .split {{ background:rgba(43,217,159,.1); border:1px solid rgba(43,217,159,.28);
+    border-radius:14px; padding:14px 16px; color:var(--muted); font-size:.95rem; margin:18px 0 28px; }}
+  .split b {{ color:var(--mint); font-weight:700; }}
+  .card {{ background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:22px; }}
+  .dist {{ font-size:2.6rem; font-weight:800; letter-spacing:-.04em; }}
+  .dist span {{ font-size:1rem; color:var(--muted); font-weight:600; margin-left:8px; }}
+  .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:22px; }}
+  .lbl {{ font-size:.7rem; font-weight:700; letter-spacing:.08em; color:var(--dim); text-transform:uppercase; }}
+  .val {{ font-size:1.15rem; font-weight:700; margin-top:4px; }}
+  .ok {{ color:var(--mint); }}
+  .txid {{ margin-top:22px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size:.78rem; color:var(--muted); word-break:break-all; }}
+  a {{ color:var(--mint); font-weight:700; }}
+  .foot {{ margin-top:22px; color:var(--dim); font-size:.85rem; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">Pedal<span>shield</span></div>
+  <h1>Ride receipt</h1>
+  <div class="split">
+    The <a href="{explorer}">chain explorer</a> proves the payout moved.
+    <b>This page proves what the phone attested.</b>
+    No route, no coordinates, no time of day.
+  </div>
+  <div class="card">
+    <div class="dist">{dist}<span>{dist_alt}</span></div>
+    <div class="grid">
+      <div><div class="lbl">Status</div><div class="val ok">{verified}</div></div>
+      <div><div class="lbl">Integrity</div><div class="val">{integrity}</div></div>
+      <div><div class="lbl">Avg speed</div><div class="val">{speed}</div></div>
+      <div><div class="lbl">Payout</div><div class="val ok">{payout}</div></div>
+    </div>
+    <div class="txid">txid {txid}</div>
+    <p style="margin-top:14px"><a href="{explorer}">View on Zcash explorer ›</a></p>
+  </div>
+  <p class="foot">Altitude, route, and start/end times are not part of a Pedalshield claim and are not shown here.</p>
+</div>
+</body>
+</html>"#,
+        explorer = explorer,
+        dist = html_escape(&dist),
+        dist_alt = html_escape(&dist_alt),
+        verified = verified,
+        integrity = html_escape(&integrity),
+        speed = html_escape(&speed),
+        payout = html_escape(&payout),
+        txid = txid,
+    )
+}
+
+async fn proof_handler(
+    State(state): State<AppState>,
+    Path(txid): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let txid = txid.trim().to_ascii_lowercase();
+    validate_tx_hash(&txid)?;
+    let proof = {
+        let conn = state.db.lock().unwrap();
+        fetch_public_proof(&conn, &txid)
+            .map_err(|e| AppError::Internal(format!("db: {e}")))?
+    };
+    let proof = proof.ok_or_else(|| {
+        AppError::NotFound(format!("no paid Pedalshield ride for txid {txid}"))
+    })?;
+    if wants_html(&headers) {
+        Ok(Html(render_proof_html(&proof)).into_response())
+    } else {
+        Ok(Json(proof).into_response())
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -1335,6 +1596,8 @@ async fn post_claim(
         trust_bps: None,
         created_at: now,
         updated_at: now,
+        integrity_score: sanitize_integrity_score(body.integrity_score),
+        duration_seconds: sanitize_duration_seconds(body.duration_seconds),
     };
 
     {
@@ -1932,6 +2195,177 @@ mod split_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod proof_tests {
+    use super::*;
+    use serde_json::Value;
+
+    const TXID: &str = "2a849aca04f9b9661ec826c22db97edfb988a22fc7ce7432a651abbc08b264ab";
+    const UA: &str = "u1testaddressaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn mem_db() -> Connection {
+        open_db(&PathBuf::from(":memory:")).expect("in-memory db")
+    }
+
+    fn paid_row(
+        txid: &str,
+        meters: u64,
+        zat: Option<u64>,
+        score: Option<f64>,
+        duration: Option<u64>,
+    ) -> ClaimRow {
+        let now = 1_700_000_000;
+        ClaimRow {
+            id: format!("ride-{txid}"),
+            recipient_ua: UA.into(),
+            distance_meters: meters,
+            signature: "sig".into(),
+            rider_id: Some("rider-secret".into()),
+            signed_at: Some(now),
+            attestation: None,
+            status: "paid".into(),
+            payout_txid: Some(txid.into()),
+            rejection_reason: None,
+            payout_zat: zat,
+            payout_gross_zat: zat,
+            payout_withheld_zat: Some(0),
+            trust_bps: Some(10_000),
+            created_at: now,
+            updated_at: now,
+            integrity_score: score,
+            duration_seconds: duration,
+        }
+    }
+
+    #[test]
+    fn public_proof_shows_attested_stats_and_hides_identity() {
+        let conn = mem_db();
+        insert_claim(&conn, &paid_row(TXID, 492, Some(390), Some(0.94), Some(180))).unwrap();
+
+        let proof = fetch_public_proof(&conn, TXID).unwrap().expect("found");
+        assert_eq!(proof.distance_meters, 492);
+        assert!(proof.verified);
+        assert_eq!(proof.integrity_score, Some(0.94));
+        assert_eq!(proof.payout_zat, Some(390));
+        assert_eq!(proof.avg_speed_kmh, Some(9.8)); // 0.492 km / 0.05 h
+        assert_eq!(
+            proof.explorer_url,
+            format!("https://mainnet.zcashexplorer.app/transactions/{TXID}")
+        );
+
+        let json = serde_json::to_value(&proof).unwrap();
+        let obj = json.as_object().expect("object");
+        let keys: Vec<_> = obj.keys().cloned().collect();
+        for forbidden in [
+            "recipient_ua",
+            "rider_id",
+            "signature",
+            "created_at",
+            "updated_at",
+            "id",
+            "claim_id",
+            "lat",
+            "lon",
+            "altitude",
+            "barometer",
+            "accel",
+            "gyro",
+            "pedometer",
+            "pressure",
+            "startedAt",
+            "endedAt",
+            "duration_seconds",
+        ] {
+            assert!(!obj.contains_key(forbidden), "leaked {forbidden}");
+        }
+        assert!(keys.contains(&"txid".to_string()));
+        assert!(keys.contains(&"distance_meters".to_string()));
+        assert!(keys.contains(&"verified".to_string()));
+        assert!(keys.contains(&"explorer_url".to_string()));
+    }
+
+    #[test]
+    fn missing_duration_omits_average_speed() {
+        let conn = mem_db();
+        insert_claim(&conn, &paid_row(TXID, 492, Some(390), Some(0.9), None)).unwrap();
+        let proof = fetch_public_proof(&conn, TXID).unwrap().unwrap();
+        assert_eq!(proof.avg_speed_kmh, None);
+        let json = serde_json::to_value(&proof).unwrap();
+        assert!(json.get("avg_speed_kmh").is_none());
+    }
+
+    #[test]
+    fn unpaid_claims_are_not_public() {
+        let conn = mem_db();
+        let mut row = paid_row(TXID, 492, None, None, None);
+        row.status = "pending".into();
+        insert_claim(&conn, &row).unwrap();
+        assert!(fetch_public_proof(&conn, TXID).unwrap().is_none());
+    }
+
+    #[test]
+    fn lookup_is_case_insensitive_and_does_not_embed_the_ua() {
+        let conn = mem_db();
+        insert_claim(&conn, &paid_row(TXID, 1500, Some(1_193), None, None)).unwrap();
+        let proof = fetch_public_proof(&conn, &TXID.to_ascii_uppercase())
+            .unwrap()
+            .unwrap();
+        assert_eq!(proof.distance_meters, 1500);
+        let html = render_proof_html(&proof);
+        assert!(!html.contains(UA), "wallet UA leaked into HTML");
+        assert!(!html.to_ascii_lowercase().contains("altitude"));
+        assert!(!html.to_ascii_lowercase().contains("barometer"));
+        assert!(!html.contains("lat"));
+        assert!(html.contains("chain explorer"));
+        assert!(html.contains("phone attested"));
+        assert!(html.contains("View on Zcash explorer"));
+    }
+
+    #[test]
+    fn json_value_never_includes_geo_keys() {
+        let proof = PublicProof {
+            txid: TXID.into(),
+            distance_meters: 492,
+            verified: true,
+            integrity_score: Some(0.91),
+            payout_zat: Some(390),
+            avg_speed_kmh: Some(12.4),
+            explorer_url: explorer_url_for(TXID),
+        };
+        let dumped = serde_json::to_string(&proof).unwrap();
+        for needle in ["\"lat\"", "\"lon\"", "accel", "gyro", "barometer", "pedometer", "pressure"] {
+            assert!(!dumped.contains(needle), "{needle} in {dumped}");
+        }
+        let v: Value = serde_json::from_str(&dumped).unwrap();
+        assert_eq!(v["verified"], true);
+    }
+
+    #[test]
+    fn sanitize_drops_out_of_range_optional_fields() {
+        assert_eq!(sanitize_integrity_score(Some(1.2)), None);
+        assert_eq!(sanitize_integrity_score(Some(-0.1)), None);
+        assert_eq!(sanitize_integrity_score(Some(0.941)), Some(0.94));
+        assert_eq!(sanitize_duration_seconds(Some(0)), None);
+        assert_eq!(sanitize_duration_seconds(Some(86_401)), None);
+        assert_eq!(sanitize_duration_seconds(Some(180)), Some(180));
+    }
+
+    #[test]
+    fn wants_html_from_browser_accept_not_from_json_clients() {
+        let mut browser = HeaderMap::new();
+        browser.insert(
+            header::ACCEPT,
+            "text/html,application/xhtml+xml;q=0.9".parse().unwrap(),
+        );
+        assert!(wants_html(&browser));
+
+        let mut api = HeaderMap::new();
+        api.insert(header::ACCEPT, "application/json".parse().unwrap());
+        assert!(!wants_html(&api));
+        assert!(!wants_html(&HeaderMap::new()));
     }
 }
 
@@ -2901,6 +3335,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/admin", get(admin_page))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_admin));
 
+    // Public ride receipt. CORS is open on this route only so the
+    // marketing site (pedalshield.app/proof/<txid>) can fetch JSON.
+    let proof = Router::new()
+        .route("/proof/:txid", get(proof_handler))
+        .layer(CorsLayer::permissive())
+        .with_state(state.clone());
+
     // Public endpoints the app needs: liveness, treasury info, submit a
     // claim, poll your own claim's status, read a balance.
     let app = Router::new()
@@ -2915,6 +3356,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/leaderboard", get(leaderboard_handler))
         .route("/handle/:ua", post(set_handle_handler))
         .route("/coop/contribute", post(coop_contribute_handler))
+        .merge(proof)
         .merge(admin)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

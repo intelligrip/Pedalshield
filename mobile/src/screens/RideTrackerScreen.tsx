@@ -35,6 +35,7 @@ import {
 
 type SensorSource = { start: (s: RideSession) => void; stop: () => void };
 import { formatDurationMs } from '../lib/format.ts';
+import { durationSecondsFromClaim } from '../lib/proof.ts';
 import {
   distanceUnit,
   speedUnit,
@@ -625,6 +626,11 @@ function PostRide({
             rideId={result.rideId}
             distanceM={result.verifiedKm * 1000}
             integrityScore={result.integrityScore}
+            durationSeconds={
+              rawRide
+                ? durationSecondsFromClaim(rawRide.startedAt, rawRide.endedAt)
+                : undefined
+            }
           />
           <Pressable
             style={styles.linkRow}
