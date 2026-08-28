@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ride proof — Pedalshield</title>
+<meta name="description" content="A Pedalshield ride receipt: the chain explorer proves the payout, this page proves what the phone attested." />
+<meta name="robots" content="noindex" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/proof/proof.css" />
+</head>
+<body>
+<nav>
+  <div class="wrap row">
+    <div class="brand">Pedal<span>shield</span></div>
+    <a class="back" href="/">Home</a>
+  </div>
+</nav>
+
+<main>
+<div class="wrap">
+  <h1>Ride receipt</h1>
+  <p class="lede">Proof without a map. The open claim never includes a route, coordinates, or time of day.</p>
+
+  <div class="split">
+    The <b>chain explorer</b> proves money moved.
+    <b>This page</b> proves what the phone attested.
+  </div>
+
+  <div id="status" class="status" hidden></div>
+
+  <div id="empty" hidden>
+    <div class="card">
+      <p class="muted">This page was not found. If you followed a <b>proof ›</b> link, check the txid, or go <a href="/">home</a>.</p>
+    </div>
+  </div>
+
+  <div id="receipt" hidden>
+    <div id="fixture-banner" class="banner" hidden>Fixture preview — not a live ledger lookup.</div>
+    <div id="partial-banner" class="banner" hidden>No Pedalshield receipt is stored for this txid yet. The explorer still shows whether a shielded payout exists.</div>
+    <div class="card">
+      <div class="dist" id="dist">—</div>
+      <div class="dist-alt" id="dist-alt"></div>
+      <div class="grid">
+        <div>
+          <div class="lbl">Status</div>
+          <div class="val ok" id="status-val">—</div>
+        </div>
+        <div>
+          <div class="lbl">Integrity</div>
+          <div class="val" id="integrity">—</div>
+        </div>
+        <div>
+          <div class="lbl">Avg speed</div>
+          <div class="val" id="speed">—</div>
+        </div>
+        <div>
+          <div class="lbl">Payout</div>
+          <div class="val" id="payout">—</div>
+        </div>
+      </div>
+      <div class="txid" id="txid"></div>
+      <p class="actions"><a id="explorer-link" href="#">View on Zcash explorer ›</a></p>
+    </div>
+    <p class="dim">Altitude, route, and start/end times are not part of a Pedalshield claim and are not shown here.</p>
+  </div>
+</div>
+</main>
+
+<footer>
+  <div class="wrap">Pedalshield · prove the ride, never the route.</div>
+</footer>
+<script src="/proof/proof.js"></script>
+</body>
+</html>

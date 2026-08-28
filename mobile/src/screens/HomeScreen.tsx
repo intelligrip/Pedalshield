@@ -22,7 +22,8 @@ import {
   type UnitPreference,
 } from '../lib/units.ts';
 import { getAccrualBalance, getTreasuryInfo } from '../lib/api.ts';
-import { DEFAULT_ZAT_PER_KM, EXPLORER_TX_BASE } from '../lib/config.ts';
+import { DEFAULT_ZAT_PER_KM } from '../lib/config.ts';
+import { proofPageUrl } from '../lib/proof.ts';
 import { onConnectedUAChange } from '../wallet/connectedWallet.ts';
 import {
   onRideHistoryChange,
@@ -199,7 +200,7 @@ function RecentRides({ rides }: { rides: RideRecord[] }) {
             ) : null}
             {r.txid ? (
               <Pressable
-                onPress={() => Linking.openURL(`${EXPLORER_TX_BASE}${r.txid}`)}
+                onPress={() => Linking.openURL(proofPageUrl(r.txid!))}
                 hitSlop={6}
               >
                 <Text style={styles.rideProof}>proof ›</Text>

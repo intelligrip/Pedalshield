@@ -18,7 +18,9 @@ import type {
 /**
  * Build the minimal payload that may leave the device.
  *
- * NEVER add geo, motion, barometer, pedometer, or features fields here.
+ * NEVER add geo, motion, barometer, pedometer, features, or duration
+ * fields here. Duration for average speed is derived at claim-submit
+ * time from startedAt/endedAt and is not a ClaimPayload key.
  */
 export function toClaimPayload(
   ride: RawRide,

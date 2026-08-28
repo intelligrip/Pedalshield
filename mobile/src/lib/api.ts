@@ -20,6 +20,14 @@ export interface ClaimSubmission {
   rider_id?: string;
   /** Unix seconds the claim was signed (backend enforces a max age). */
   signed_at?: number;
+  /** On-device integrity score (0..=1). Already on ClaimPayload. */
+  integrity_score?: number;
+  /**
+   * Wall-clock duration in seconds, derived from ClaimPayload startedAt
+   * / endedAt. Lets the public proof page show average speed without
+   * storing timestamps (time of day) or adding a ClaimPayload key.
+   */
+  duration_seconds?: number;
 }
 
 export interface ClaimAck {

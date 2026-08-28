@@ -27,6 +27,13 @@ export const BACKEND_URL =
 export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/';
 
 /**
+ * Pedalshield-hosted ride receipt. The app `proof ›` link opens this
+ * (not the raw explorer). The page itself links out to EXPLORER_TX_BASE
+ * so the chain still proves money moved.
+ */
+export const PROOF_PAGE_BASE = 'https://pedalshield.app/proof/';
+
+/**
  * Fallback reward rate in zatoshi per kilometre, used before the live
  * value from GET /treasury/info arrives (or if the backend is offline).
  * The reward is pegged to CARBON VALUE: ~1 lb CO2 avoided per mile ×
