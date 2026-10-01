@@ -309,3 +309,102 @@ pub fn detect_ironwood(
         }
     }
 }
+
+/// Ironwood twin of [`process_block`]: walk every Ironwood action in
+/// canonical order, append each `cmx` to the IRONWOOD tree (never the legacy
+/// one), and record notes that decrypt under `ivks` with their positions in
+/// that tree — which makes them spendable.
+///
+/// Kept as a deliberate copy of `process_block` rather than a shared generic,
+/// so the proven legacy path is untouched by the Ironwood work. Differences:
+/// `tx.ironwood_actions`, `IronwoodDomain`, `ironwood_nullifiers`.
+pub fn process_block_ironwood(
+    block: &proto::CompactBlock,
+    ivks: &[PreparedIncomingViewingKey],
+    tree: &mut OrchardTree,
+    found: &mut Vec<FoundNote>,
+    progress: &mut ScanProgress,
+) -> Result<(), ScanError> {
+    let height = block.height;
+    let mut vtx: Vec<&proto::CompactTx> = block.vtx.iter().collect();
+    vtx.sort_by_key(|t| t.index);
+
+    for tx in vtx {
+        let tx_index = tx.index;
+        for action in &tx.ironwood_actions {
+            progress.ironwood_actions_inspected += 1;
+
+            let nullifier_bytes = bytes32(&action.nullifier).ok_or(ScanError::MalformedAction {
+                height,
+                tx_index,
+                field: "ironwood nullifier",
+            })?;
+            progress.ironwood_nullifiers.insert(nullifier_bytes);
+            let cmx_bytes = bytes32(&action.cmx).ok_or(ScanError::MalformedAction {
+                height,
+                tx_index,
+                field: "ironwood cmx",
+            })?;
+            let ephemeral_key_bytes =
+                bytes32(&action.ephemeral_key).ok_or(ScanError::MalformedAction {
+                    height,
+                    tx_index,
+                    field: "ironwood ephemeral_key",
+                })?;
+            if action.ciphertext.len() != 52 {
+                return Err(ScanError::MalformedAction {
+                    height,
+                    tx_index,
+                    field: "ironwood ciphertext",
+                });
+            }
+
+            let (cmx, nullifier) = match (
+                ExtractedNoteCommitment::from_bytes(&cmx_bytes).into_option(),
+                Nullifier::from_bytes(&nullifier_bytes).into_option(),
+            ) {
+                (Some(c), Some(n)) => (c, n),
+                _ => {
+                    // Keep positions aligned, exactly as the legacy path does.
+                    let placeholder = MerkleHashOrchard::from_bytes(&[0u8; 32])
+                        .into_option()
+                        .expect("zero is a valid MerkleHashOrchard");
+                    tree.append(placeholder, false)
+                        .map_err(|e| ScanError::TreeUpdate { height, source: e })?;
+                    continue;
+                }
+            };
+
+            let mut enc_ciphertext = [0u8; 52];
+            enc_ciphertext.copy_from_slice(&action.ciphertext);
+            let compact_action = CompactAction::from_parts(
+                nullifier,
+                cmx,
+                EphemeralKeyBytes(ephemeral_key_bytes),
+                enc_ciphertext,
+            );
+            let domain = IronwoodDomain::for_compact_action(&compact_action);
+            let maybe_note = ivks
+                .iter()
+                .find_map(|k| try_compact_note_decryption(&domain, k, &compact_action));
+
+            let leaf = MerkleHashOrchard::from_cmx(&cmx);
+            let position = tree
+                .append(leaf, maybe_note.is_some())
+                .map_err(|e| ScanError::TreeUpdate { height, source: e })?;
+
+            if let Some((note, _recipient)) = maybe_note {
+                found.push(FoundNote {
+                    position,
+                    value_zatoshi: note.value().inner(),
+                    block_height: height,
+                    tx_index,
+                    nullifier_bytes,
+                    note,
+                });
+                progress.notes_found += 1;
+            }
+        }
+    }
+    Ok(())
+}

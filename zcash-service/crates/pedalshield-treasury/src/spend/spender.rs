@@ -38,7 +38,7 @@ use zcash_protocol::value::Zatoshis;
 
 use crate::proto;
 use crate::proto::compact_tx_streamer_client::CompactTxStreamerClient;
-use crate::spend::scanner::{process_block, FoundNote, ScanProgress};
+use crate::spend::scanner::{process_block, process_block_ironwood, FoundNote, ScanProgress};
 use crate::spend::tree::OrchardTree;
 
 /// Outcome of building (and optionally broadcasting) a spend.
@@ -188,13 +188,12 @@ pub async fn pay_with_memo(
     // never past the tip (an over-advanced watermark must not scan an
     // empty range and masquerade as "no funds").
     let window_start = scan_from.clamp(birthday, tip.max(birthday));
-    let (mut tree, mut found, mut progress) =
-        scan_range(&mut client, &scan_ivks, window_start, tip).await?;
+    let mut scan = scan_range(&mut client, &scan_ivks, window_start, tip).await?;
     let mut scanned_from = window_start;
     let mut full_rescan_used = false;
 
     if window_start > birthday
-        && insufficient(select_unspent(&found, &progress, &fvk), amount_zat)
+        && insufficient(select_best(&scan, &fvk).map(|(_, n)| n), amount_zat)
     {
         // The watermark is an optimisation, never an authority on funds.
         tracing::warn!(
@@ -203,21 +202,25 @@ pub async fn pay_with_memo(
             tip,
             "no unspent note in watermark window; falling back to full rescan"
         );
-        let full = scan_range(&mut client, &scan_ivks, birthday, tip).await?;
-        tree = full.0;
-        found = full.1;
-        progress = full.2;
+        scan = scan_range(&mut client, &scan_ivks, birthday, tip).await?;
         scanned_from = birthday;
         full_rescan_used = true;
     }
 
-    let note_meta = select_unspent(&found, &progress, &fvk)
-        .ok_or("no unspent treasury note found in range")?;
+    // Largest unspent note across BOTH pools. Since NU6.3, deposits from
+    // up-to-date wallets land in Ironwood; legacy Orchard notes remain
+    // spendable through the original migration path.
+    let (pool, note_meta) = select_best(&scan, &fvk)
+        .ok_or("no unspent treasury note found in range (legacy or Ironwood)")?;
     let note = note_meta.note;
     let note_value_zat = note_meta.value_zatoshi;
     let position = note_meta.position;
 
-    // --- witness -> merkle path + anchor ---
+    // --- witness -> merkle path + anchor, from the note's OWN pool tree ---
+    let tree = match pool {
+        Pool::Legacy => &scan.tree,
+        Pool::Ironwood => &scan.iw_tree,
+    };
     let w = tree.witness(position)?;
     let auth_path: [orchard::tree::MerkleHashOrchard; 32] = w
         .auth_path
@@ -230,11 +233,20 @@ pub async fn pay_with_memo(
         .ok_or("anchor bytes invalid")?;
     let anchor_hex: String = w.anchor.to_bytes().iter().map(|b| format!("{b:02x}")).collect();
 
+    // Legacy note: spend in the Orchard bundle (real anchor), pay + change as
+    // before (Ironwood bundle with an empty anchor, since it spends nothing).
+    // Ironwood note: no Orchard bundle at all; spend, pay and change all in
+    // the Ironwood bundle, anchored to the real Ironwood tree.
+    let (orchard_anchor, ironwood_anchor) = match pool {
+        Pool::Legacy => (Some(anchor), orchard::Anchor::empty_tree()),
+        Pool::Ironwood => (None, anchor),
+    };
+
     let target_height = BlockHeight::from_u32(tip as u32);
     let fee_rule = FeeRule::standard();
     let cfg = || BuildConfig::Standard {
         sapling_anchor: None,
-        orchard_anchor: Some(anchor),
+        orchard_anchor,
         // NU6.3 (Ironwood) — MIGRATION SPEND.
         //
         // After activation, legacy `orchard_v3` bundles are built with
@@ -255,7 +267,11 @@ pub async fn pay_with_memo(
         // exactly this case. NOTE: our CHANGE now lands in the Ironwood
         // pool, so the scanner must learn to track Ironwood notes before
         // the treasury can spend that change (see IRONWOOD_MIGRATION.md).
-        ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+        //
+        // UPDATE (Ironwood phase B): when the selected note is itself an
+        // Ironwood note, `ironwood_anchor` is the real Ironwood tree root and
+        // there is no Orchard bundle; see `pool` above.
+        ironwood_anchor: Some(ironwood_anchor),
         // Same padded transactional discipline the pre-0.29 builder applied
         // implicitly; padding hides the true action count (privacy).
         orchard_pool_bundle_type: orchard::builder::BundleType::DEFAULT,
@@ -265,9 +281,11 @@ pub async fn pay_with_memo(
     let has_change = amount_zat > 0;
     let fee_zat: u64 = {
         let mut probe = Builder::new(MainNetwork, target_height, cfg());
-        probe
-            .add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path.clone())
-            .map_err(|e| format!("probe add_orchard_spend: {e:?}"))?;
+        match pool {
+            Pool::Legacy => probe.add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path.clone()),
+            Pool::Ironwood => probe.add_ironwood_spend::<FeeError>(fvk.clone(), note, merkle_path.clone()),
+        }
+        .map_err(|e| format!("probe add spend ({pool:?}): {e:?}"))?;
         let probe_recipient_val = if amount_zat == 0 { note_value_zat } else { amount_zat };
         // NU6.3: rider payment must be an IRONWOOD output (see the real
         // build below for the full rationale).
@@ -280,15 +298,22 @@ pub async fn pay_with_memo(
             )
             .map_err(|e| format!("probe add_ironwood_output: {e:?}"))?;
         if has_change {
-            probe
-                .add_orchard_change_output::<FeeError>(
+            match pool {
+                Pool::Legacy => probe.add_orchard_change_output::<FeeError>(
                     fvk.clone(),
                     Some(ovk_int.clone()),
                     change_addr,
                     Zatoshis::from_u64(1).unwrap(),
                     MemoBytes::empty(),
-                )
-                .map_err(|e| format!("probe add change: {e:?}"))?;
+                ),
+                Pool::Ironwood => probe.add_ironwood_output::<FeeError>(
+                    Some(ovk_int.clone()),
+                    change_addr,
+                    Zatoshis::from_u64(1).unwrap(),
+                    MemoBytes::empty(),
+                ),
+            }
+            .map_err(|e| format!("probe add change ({pool:?}): {e:?}"))?;
         }
         u64::from(probe.get_fee(&fee_rule).map_err(|e| format!("get_fee: {e:?}"))?)
     };
@@ -311,9 +336,11 @@ pub async fn pay_with_memo(
 
     // --- real build: prove, sighash, sign, binding sig, serialize ---
     let mut builder = Builder::new(MainNetwork, target_height, cfg());
-    builder
-        .add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path)
-        .map_err(|e| format!("add_orchard_spend: {e:?}"))?;
+    match pool {
+        Pool::Legacy => builder.add_orchard_spend::<FeeError>(fvk.clone(), note, merkle_path),
+        Pool::Ironwood => builder.add_ironwood_spend::<FeeError>(fvk.clone(), note, merkle_path),
+    }
+    .map_err(|e| format!("add spend ({pool:?}): {e:?}"))?;
     // NU6.3 (Ironwood) migration spend, three moving parts:
     //
     //  1. SPEND stays legacy Orchard — that's where the treasury's notes
@@ -344,15 +371,28 @@ pub async fn pay_with_memo(
         )
         .map_err(|e| format!("add_ironwood_output: {e:?}"))?;
     if change_value_zat > 0 {
-        builder
-            .add_orchard_change_output::<FeeError>(
+        let change_value =
+            Zatoshis::from_u64(change_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?;
+        match pool {
+            // Legacy change stays legacy (wallet-controlled change is allowed
+            // even with cross-address transfers disabled).
+            Pool::Legacy => builder.add_orchard_change_output::<FeeError>(
                 fvk.clone(),
                 Some(ovk_int),
                 change_addr,
-                Zatoshis::from_u64(change_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
+                change_value,
                 MemoBytes::empty(),
-            )
-            .map_err(|e| format!("add change output: {e:?}"))?;
+            ),
+            // Ironwood change goes to our own internal address in Ironwood;
+            // the scanner now tracks it with the internal-scope IVK.
+            Pool::Ironwood => builder.add_ironwood_output::<FeeError>(
+                Some(ovk_int),
+                change_addr,
+                change_value,
+                MemoBytes::empty(),
+            ),
+        }
+        .map_err(|e| format!("add change output ({pool:?}): {e:?}"))?;
     }
 
     let transparent_signing_set = TransparentSigningSet::new();
@@ -400,26 +440,47 @@ pub async fn pay_with_memo(
     })
 }
 
-/// Seed the Orchard tree from the frontier just before `from`, then stream
-/// `[from, tip]`, feeding every action into the tree and collecting the
-/// notes that IVK-decrypt as ours.
+/// Which shielded pool a treasury note lives in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pool {
+    /// Pre-NU6.3 Orchard (note plaintext v2).
+    Legacy,
+    /// NU6.3 Ironwood (note plaintext v3), its own commitment tree.
+    Ironwood,
+}
+
+/// Everything one scan learns, per pool. The two trees are independent:
+/// an Ironwood commitment never enters the legacy tree, or every legacy
+/// position after the fork would shift.
+struct ScanOut {
+    tree: OrchardTree,
+    found: Vec<FoundNote>,
+    iw_tree: OrchardTree,
+    iw_found: Vec<FoundNote>,
+    progress: ScanProgress,
+}
+
+/// Seed BOTH trees from the frontiers just before `from`, then stream
+/// `[from, tip]`, feeding Orchard actions into the legacy tree and Ironwood
+/// actions into the Ironwood tree, collecting notes that decrypt as ours.
 ///
 /// Seeding from `GetTreeState(from - 1)` is what makes a partial scan
-/// legitimate: lightwalletd hands us the authoritative global frontier at
-/// that height, so leaf positions and the witness anchor match consensus
-/// exactly as they would after a scan from genesis.
+/// legitimate: lightwalletd hands us the authoritative frontier of each
+/// tree at that height. Before NU6.3 activation `ironwoodTree` is empty,
+/// which seeds an empty Ironwood tree — exactly right.
 async fn scan_range(
     client: &mut CompactTxStreamerClient<Channel>,
     scan_ivks: &[PreparedIncomingViewingKey],
     from: u64,
     tip: u64,
-) -> Result<(OrchardTree, Vec<FoundNote>, ScanProgress), Box<dyn std::error::Error>> {
+) -> Result<ScanOut, Box<dyn std::error::Error>> {
     let seed_height = from.saturating_sub(1);
     let ts = client
         .get_tree_state(proto::BlockId { height: seed_height, hash: vec![] })
         .await?
         .into_inner();
     let mut tree = OrchardTree::from_tree_state(&ts.orchard_tree)?;
+    let mut iw_tree = OrchardTree::from_tree_state(&ts.ironwood_tree)?;
 
     let range = proto::BlockRange {
         start: Some(proto::BlockId { height: from, hash: vec![] }),
@@ -427,12 +488,27 @@ async fn scan_range(
     };
     let mut stream = client.get_block_range(range).await?.into_inner();
     let mut found: Vec<FoundNote> = Vec::new();
+    let mut iw_found: Vec<FoundNote> = Vec::new();
     let mut progress = ScanProgress::default();
     while let Some(block) = stream.next().await {
         let block = block.map_err(|e| format!("stream error: {e}"))?;
         process_block(&block, scan_ivks, &mut tree, &mut found, &mut progress)?;
+        process_block_ironwood(&block, scan_ivks, &mut iw_tree, &mut iw_found, &mut progress)?;
     }
-    Ok((tree, found, progress))
+    Ok(ScanOut { tree, found, iw_tree, iw_found, progress })
+}
+
+/// Largest unspent note across both pools. Each pool's notes are checked
+/// against that pool's own revealed nullifiers.
+fn select_best<'a>(scan: &'a ScanOut, fvk: &FullViewingKey) -> Option<(Pool, &'a FoundNote)> {
+    let legacy = select_unspent(&scan.found, &scan.progress.all_nullifiers, fvk)
+        .map(|n| (Pool::Legacy, n));
+    let ironwood = select_unspent(&scan.iw_found, &scan.progress.ironwood_nullifiers, fvk)
+        .map(|n| (Pool::Ironwood, n));
+    match (legacy, ironwood) {
+        (Some(l), Some(i)) => Some(if i.1.value_zatoshi > l.1.value_zatoshi { i } else { l }),
+        (l, i) => l.or(i),
+    }
 }
 
 /// Deliberately generous upper bound on the ZIP-317 fee for this
@@ -462,13 +538,13 @@ fn insufficient(best: Option<&FoundNote>, amount_zat: u64) -> bool {
 /// Largest note of ours whose nullifier has not appeared on chain.
 fn select_unspent<'a>(
     found: &'a [FoundNote],
-    progress: &ScanProgress,
+    spent: &std::collections::HashSet<[u8; 32]>,
     fvk: &FullViewingKey,
 ) -> Option<&'a FoundNote> {
     let mut best: Option<&FoundNote> = None;
     for fnote in found {
         let nf = fnote.note.nullifier(fvk).to_bytes();
-        if progress.all_nullifiers.contains(&nf) {
+        if spent.contains(&nf) {
             continue; // already spent on chain
         }
         match best {
