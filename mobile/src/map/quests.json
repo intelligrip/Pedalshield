@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "quests": [
+    {
+      "id": "q-bend-river-line",
+      "title": "The River Line",
+      "blurb": "Clear the fog along the Deschutes. Touch any 3 of the 5 river cells in one ride.",
+      "need": 3,
+      "stops": [
+        { "label": "Riverbend", "tile": "fl1:-30067:11400" },
+        { "label": "Old Mill", "tile": "fl1:-30067:11402" },
+        { "label": "Drake Park", "tile": "fl1:-30069:11405" },
+        { "label": "Pioneer Park", "tile": "fl1:-30069:11408" },
+        { "label": "First Street Rapids", "tile": "fl1:-30071:11410" }
+      ]
+    }
+  ]
+}
