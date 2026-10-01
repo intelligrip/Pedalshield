@@ -20,7 +20,7 @@ use std::collections::HashSet;
 
 use orchard::keys::PreparedIncomingViewingKey;
 use orchard::note::{ExtractedNoteCommitment, Note, Nullifier};
-use orchard::note_encryption::{CompactAction, OrchardDomain};
+use orchard::note_encryption::{CompactAction, IronwoodDomain, OrchardDomain};
 use orchard::tree::MerkleHashOrchard;
 use thiserror::Error;
 use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
@@ -251,10 +251,11 @@ pub struct IronwoodHit {
 /// commitment tree, and appending its leaves to ours would shift every
 /// legacy position after the fork and break legacy spends.
 ///
-/// Uses Orchard note encryption. Ironwood outputs are built from Orchard
-/// addresses and notes (see `add_ironwood_output` in the spender), so this
-/// is expected to decrypt them; if a sync reports Ironwood actions inspected
-/// but never finds a known deposit, that assumption is the first suspect.
+/// Uses `IronwoodDomain`, NOT `OrchardDomain`. Ironwood notes carry a v3 note
+/// plaintext (lead byte 0x03, "quantum-recoverable"); the Orchard domain
+/// accepts only v2 and rejects v3 by design — orchard 0.15's own test
+/// `orchard_domain_rejects_v3_encrypted_outputs`. Decrypting Ironwood actions
+/// with the Orchard domain silently finds nothing; that was our first bug.
 pub fn detect_ironwood(
     block: &proto::CompactBlock,
     ivks: &[PreparedIncomingViewingKey],
@@ -289,7 +290,7 @@ pub fn detect_ironwood(
             enc.copy_from_slice(&action.ciphertext);
             let compact =
                 CompactAction::from_parts(nullifier, cmx, EphemeralKeyBytes(epk_bytes), enc);
-            let domain = OrchardDomain::for_compact_action(&compact);
+            let domain = IronwoodDomain::for_compact_action(&compact);
             if let Some((note, _)) = ivks
                 .iter()
                 .find_map(|k| try_compact_note_decryption(&domain, k, &compact))
