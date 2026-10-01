@@ -103,6 +103,45 @@ pub async fn pay(
     scan_from: u64,
     broadcast: bool,
 ) -> Result<SpendResult, Box<dyn std::error::Error>> {
+    pay_with_memo(endpoint, sk, recipient_ua, amount_zat, birthday, scan_from, broadcast, None).await
+}
+
+/// Largest memo a shielded output can carry (ZIP-302).
+pub const MAX_MEMO_BYTES: usize = 512;
+
+/// Turn UTF-8 text into a ZIP-302 text memo. Errors rather than truncating:
+/// a silently clipped memo could cut a quest code in half.
+pub fn text_memo(text: &str) -> Result<MemoBytes, String> {
+    let bytes = text.as_bytes();
+    if bytes.is_empty() {
+        return Err("memo is empty".into());
+    }
+    if bytes.len() > MAX_MEMO_BYTES {
+        return Err(format!("memo is {} bytes, max {MAX_MEMO_BYTES}", bytes.len()));
+    }
+    MemoBytes::from_bytes(bytes).map_err(|e| format!("memo: {e:?}"))
+}
+
+/// `pay`, plus an encrypted memo on the RECIPIENT's output. Only the
+/// recipient (or a holder of their viewing key) can read it; the change
+/// output stays memo-less. A memo does not change the ZIP-317 fee, which is
+/// counted in actions, not bytes.
+#[allow(clippy::too_many_arguments)]
+pub async fn pay_with_memo(
+    endpoint: &str,
+    sk: &SpendingKey,
+    recipient_ua: &str,
+    amount_zat: u64,
+    birthday: u64,
+    scan_from: u64,
+    broadcast: bool,
+    memo_text: Option<&str>,
+) -> Result<SpendResult, Box<dyn std::error::Error>> {
+    // Validate the memo before any network or proving work.
+    let recipient_memo: MemoBytes = match memo_text {
+        Some(t) => text_memo(t)?,
+        None => MemoBytes::empty(),
+    };
     // --- keys ---
     let fvk = FullViewingKey::from(sk);
     let ivk: IncomingViewingKey = fvk.to_ivk(Scope::External);
@@ -237,7 +276,7 @@ pub async fn pay(
                 Some(ovk_ext.clone()),
                 recipient.clone(),
                 Zatoshis::from_u64(probe_recipient_val).map_err(|e| format!("zatoshis: {e:?}"))?,
-                MemoBytes::empty(),
+                recipient_memo.clone(),
             )
             .map_err(|e| format!("probe add_ironwood_output: {e:?}"))?;
         if has_change {
@@ -301,7 +340,7 @@ pub async fn pay(
             Some(ovk_ext),
             recipient,
             Zatoshis::from_u64(recipient_value_zat).map_err(|e| format!("zatoshis: {e:?}"))?,
-            MemoBytes::empty(),
+            recipient_memo,
         )
         .map_err(|e| format!("add_ironwood_output: {e:?}"))?;
     if change_value_zat > 0 {
@@ -438,4 +477,24 @@ fn select_unspent<'a>(
         }
     }
     best
+}
+
+
+#[cfg(test)]
+mod memo_tests {
+    use super::*;
+
+    #[test]
+    fn text_memo_accepts_up_to_512_bytes() {
+        assert!(text_memo("FOG-3 · The fog thins east of you.").is_ok());
+        assert!(text_memo(&"a".repeat(512)).is_ok());
+    }
+
+    #[test]
+    fn text_memo_refuses_rather_than_truncating() {
+        assert!(text_memo(&"a".repeat(513)).is_err());
+        assert!(text_memo("").is_err());
+        // Multi-byte characters count as bytes, not chars.
+        assert!(text_memo(&"é".repeat(257)).is_err());
+    }
 }
