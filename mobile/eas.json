@@ -46,10 +46,21 @@
         "resourceClass": "m-medium"
       },
       "channel": "production"
+    },
+    "fogline": {
+      "extends": "production",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://api.pedalshield.app",
+        "EXPO_PUBLIC_APP": "fogline"
+      },
+      "channel": "fogline"
     }
   },
   "submit": {
     "production": {
+      "ios": {}
+    },
+    "fogline": {
       "ios": {}
     }
   }

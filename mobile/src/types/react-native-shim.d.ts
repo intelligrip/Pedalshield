@@ -107,6 +107,14 @@ declare module 'react-native' {
     style?: StyleProp<ViewStyle>;
   }>;
 
+  export const Alert: {
+    alert(
+      title: string,
+      message?: string,
+      buttons?: { text: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void }[],
+    ): void;
+  };
+
   export const Linking: {
     openURL(url: string): Promise<void>;
     canOpenURL(url: string): Promise<boolean>;
@@ -145,6 +153,8 @@ declare module 'react-native' {
       config: { toValue: number; friction?: number; tension?: number; useNativeDriver: boolean },
     ): CompositeAnimation;
     function sequence(animations: CompositeAnimation[]): CompositeAnimation;
+    function loop(animation: CompositeAnimation, config?: { iterations?: number }): CompositeAnimation;
+    function createAnimatedComponent<P>(component: ComponentType<P>): ComponentType<P & { [k: string]: unknown }>;
     const View: ComponentType<ViewProps & { style?: unknown }>;
     const Text: ComponentType<TextProps & { style?: unknown }>;
   }
@@ -167,6 +177,9 @@ declare module 'react-native-svg' {
   export const Defs: ComponentType<{ children?: ReactNode }>;
   export const RadialGradient: ComponentType<{ id?: string; cx?: string; cy?: string; r?: string; children?: ReactNode }>;
   export const Stop: ComponentType<{ offset?: string; stopColor?: string; stopOpacity?: string | number }>;
+  export const G: ComponentType<{ children?: ReactNode; [k: string]: unknown }>;
+  export const Polygon: ComponentType<{ points?: string; [k: string]: unknown }>;
+  export const Text: ComponentType<{ children?: ReactNode; [k: string]: unknown }>;
 }
 
 declare module '@react-navigation/native' {

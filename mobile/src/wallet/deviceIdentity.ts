@@ -30,6 +30,8 @@ import { ensureAttestation } from './appAttest.ts';
 
 declare const require: (m: string) => any;
 
+import { foglineSigningMessage, type FoglineClaim } from '../map/foglineClaim.ts';
+
 let SecureStore: any = null;
 try {
   SecureStore = require('expo-secure-store');
@@ -210,6 +212,30 @@ export async function signClaim(
       rider_id: id.riderId,
       signed_at: signedAt,
     };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sign a Fogline claim with the same Keychain-held device key. The message
+ * is `foglineSigningMessage` (pinned by a test vector shared with the Rust
+ * backend). Returns null when signing is unavailable; the backend accepts
+ * unsigned claims only while PEDALSHIELD_REQUIRE_SIGNED_CLAIMS is off.
+ */
+export async function signFoglineClaim(
+  claim: FoglineClaim,
+  recipientUa: string,
+): Promise<SignedClaimFields | null> {
+  const id = await ensureDeviceIdentity();
+  if (!id) return null;
+  try {
+    const sk = await loadOrCreateSecretKey();
+    if (!sk) return null;
+    const signedAt = Math.floor(Date.now() / 1000);
+    const msg = utf8(foglineSigningMessage(claim, recipientUa, signedAt));
+    const sig: Uint8Array = await ed.signAsync(msg, sk);
+    return { signature: toBase64(sig), rider_id: id.riderId, signed_at: signedAt };
   } catch {
     return null;
   }

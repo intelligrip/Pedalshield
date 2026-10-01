@@ -225,3 +225,54 @@ export function tilesForRide(geo: readonly GeoPoint[]): string[] {
   if (clipped.length < 2) return [];
   return tilesForPath(clipped);
 }
+
+/* ------------------------------------------------------------------ */
+/* Neighbourhoods — for drawing the fog field on device               */
+/* ------------------------------------------------------------------ */
+
+const AXIAL_DIRS: readonly [number, number][] = [
+  [1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1],
+];
+
+/** Hex distance between two tiles, in cells. */
+export function tileDistance(a: string, b: string): number {
+  const p = parseTileId(a);
+  const q = parseTileId(b);
+  if (!p || !q) return Infinity;
+  const dq = p.q - q.q;
+  const dr = p.r - q.r;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
+/** Every tile within `radius` cells of `center`, centre included. */
+export function tilesWithin(center: string, radius: number): string[] {
+  const c = parseTileId(center);
+  if (!c) return [];
+  const out: string[] = [];
+  const R = Math.max(0, Math.floor(radius));
+  for (let dq = -R; dq <= R; dq++) {
+    for (let dr = Math.max(-R, -dq - R); dr <= Math.min(R, -dq + R); dr++) {
+      out.push(formatId(c.q + dq, c.r + dr));
+    }
+  }
+  return out;
+}
+
+/** The tile nearest the centre of mass of a set — for framing a view. */
+export function centroidTile(tiles: readonly string[]): string | null {
+  let sq = 0;
+  let sr = 0;
+  let n = 0;
+  for (const t of tiles) {
+    const a = parseTileId(t);
+    if (!a) continue;
+    sq += a.q;
+    sr += a.r;
+    n++;
+  }
+  if (n === 0) return null;
+  const { q, r } = cubeRound(sq / n, sr / n);
+  return formatId(q, r);
+}
+
+export { AXIAL_DIRS };

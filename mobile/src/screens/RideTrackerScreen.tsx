@@ -11,6 +11,8 @@ import {
 import { Button } from '../components/Button.tsx';
 import { Card } from '../components/Card.tsx';
 import { LiveRouteMap } from '../components/LiveRouteMap.tsx';
+import { FoglinePostRide } from '../fogline/FoglinePostRide.tsx';
+import { IS_FOGLINE } from '../lib/config.ts';
 import { PayoutCard } from '../components/PayoutCard.tsx';
 import { GhostRideSheet } from '../components/GhostRideSheet.tsx';
 import { PrivacyRevealSheet } from '../components/PrivacyRevealSheet.tsx';
@@ -173,6 +175,18 @@ export function RideTrackerScreen() {
   );
 
   if (snap.state === 'complete' && snap.result) {
+    if (IS_FOGLINE) {
+      return (
+        <FoglinePostRide
+          result={snap.result}
+          rawRide={sessionRef.current.getRawRide()}
+          onDone={() => {
+            sourceRef.current?.stop();
+            sessionRef.current.reset();
+          }}
+        />
+      );
+    }
     return (
       <PostRide
         snap={snap}

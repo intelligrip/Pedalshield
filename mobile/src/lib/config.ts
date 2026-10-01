@@ -23,6 +23,16 @@
 export const BACKEND_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL ?? 'https://api.pedalshield.app';
 
+/**
+ * Which experience this build is. `fogline` swaps the tab bar and the
+ * post-ride screen for Fogline (ZECATHON, Games). Anything else, including
+ * unset, is Pedalshield — so an existing build or OTA can never flip into
+ * Fogline by accident. Set per build profile in eas.json.
+ */
+export const APP_MODE: 'pedalshield' | 'fogline' =
+  process.env.EXPO_PUBLIC_APP === 'fogline' ? 'fogline' : 'pedalshield';
+export const IS_FOGLINE = APP_MODE === 'fogline';
+
 /** Block explorer base for surfacing a payout txid. */
 export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/';
 
