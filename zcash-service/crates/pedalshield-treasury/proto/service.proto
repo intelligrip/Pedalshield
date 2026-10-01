@@ -64,6 +64,10 @@ message TreeState {
     uint32 time        = 4;
     string saplingTree = 5;  // hex-encoded Sapling CommitmentTree
     string orchardTree = 6;  // hex-encoded Orchard CommitmentTree
+    // NU6.3. Field number from upstream zcash/lightwallet-protocol
+    // walletrpc/service.proto. Separate tree: Ironwood commitments never
+    // enter the legacy Orchard tree.
+    string ironwoodTree = 7; // hex-encoded Ironwood CommitmentTree
 }
 
 message LightdInfo {
@@ -104,6 +108,11 @@ message CompactTx {
     repeated CompactSaplingSpend  spends  = 4;
     repeated CompactSaplingOutput outputs = 5;
     repeated CompactOrchardAction actions = 6;
+    // NU6.3 (Ironwood). Field 9, per upstream zcash/lightwallet-protocol
+    // walletrpc/compact_formats.proto. Without this field prost silently
+    // DROPS Ironwood actions, which is why deposits made by post-fork
+    // wallets were invisible to the treasury scanner.
+    repeated CompactOrchardAction ironwood_actions = 9;
 }
 
 message CompactSaplingSpend {

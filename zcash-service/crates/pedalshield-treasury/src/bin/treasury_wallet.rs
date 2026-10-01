@@ -196,7 +196,9 @@ async fn sync_async(
     };
     use pedalshield_treasury::proto;
     use pedalshield_treasury::proto::compact_tx_streamer_client::CompactTxStreamerClient;
-    use pedalshield_treasury::spend::scanner::{process_block, FoundNote, ScanProgress};
+    use pedalshield_treasury::spend::scanner::{
+        detect_ironwood, process_block, FoundNote, IronwoodHit, ScanProgress,
+    };
     use pedalshield_treasury::spend::tree::OrchardTree;
     use std::time::{Duration, Instant};
     use tokio_stream::StreamExt;
@@ -275,6 +277,12 @@ async fn sync_async(
 
     let mut found: Vec<FoundNote> = Vec::new();
     let mut progress = ScanProgress::default();
+    // Ironwood (NU6.3): detected with both scopes, kept out of the legacy tree.
+    let iw_ivks = [
+        PreparedIncomingViewingKey::new(&ivk),
+        PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::Internal)),
+    ];
+    let mut iw_hits: Vec<IronwoodHit> = Vec::new();
     let started = Instant::now();
     let mut last_dot = start;
 
@@ -282,6 +290,7 @@ async fn sync_async(
         let block = block.map_err(|e| format!("stream error: {e}"))?;
         let h = block.height;
         process_block(&block, core::slice::from_ref(&prepared_ivk), &mut tree, &mut found, &mut progress)?;
+        detect_ironwood(&block, &iw_ivks, &mut iw_hits, &mut progress);
         if h.saturating_sub(last_dot) >= 500 {
             print!(".");
             use std::io::Write;
@@ -296,6 +305,21 @@ async fn sync_async(
     println!("  actions inspected: {}", progress.actions_inspected);
     println!("  tree leaves:       {}", tree.position());
     println!("  notes found:       {}", found.len());
+    println!("  ironwood actions:  {}", progress.ironwood_actions_inspected);
+    println!("  ironwood notes:    {}", iw_hits.len());
+    for h in &iw_hits {
+        let spent = progress
+            .ironwood_nullifiers
+            .contains(&h.note.nullifier(&fvk).to_bytes());
+        println!(
+            "  + IRONWOOD note: {} zat ({:.8} ZEC) | block {} | txid {} | {}",
+            h.value_zatoshi,
+            h.value_zatoshi as f64 / 100_000_000.0,
+            h.block_height,
+            h.txid_hex,
+            if spent { "spent in range" } else { "unspent (not yet spendable: phase B)" }
+        );
+    }
     let anchor_hex: String = tree
         .root()
         .to_bytes()

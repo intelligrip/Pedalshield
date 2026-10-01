@@ -76,6 +76,11 @@ pub struct ScanProgress {
     /// Orchard action publishes the nullifier of the note it spends, so
     /// a note we own is spent iff its nullifier appears in this set.
     pub all_nullifiers: HashSet<[u8; 32]>,
+    /// Ironwood (NU6.3) actions seen. Kept separate from `actions_inspected`
+    /// so a sync shows plainly whether the server is serving Ironwood data.
+    pub ironwood_actions_inspected: u64,
+    /// Nullifiers revealed by Ironwood actions — for Ironwood spent-detection.
+    pub ironwood_nullifiers: HashSet<[u8; 32]>,
 }
 
 /// Walk every Orchard action in `block` in canonical (tx, action) order,
@@ -218,5 +223,88 @@ fn bytes32(slice: &[u8]) -> Option<[u8; 32]> {
         Some(out)
     } else {
         None
+    }
+}
+
+
+// ---------------------------------------------------------------------
+// Ironwood (NU6.3) — detection only
+// ---------------------------------------------------------------------
+
+/// An Ironwood note addressed to us. Detection only: no tree position and
+/// no witness yet, so it is NOT spendable through this module — spending
+/// needs the separate Ironwood commitment tree (phase B).
+#[derive(Debug, Clone)]
+pub struct IronwoodHit {
+    pub value_zatoshi: u64,
+    pub block_height: u64,
+    pub tx_index: u64,
+    /// Display-order (byte-reversed) hex txid, as explorers show it.
+    pub txid_hex: String,
+    pub nullifier_bytes: [u8; 32],
+    pub note: Note,
+}
+
+/// Trial-decrypt every Ironwood action in `block` with `ivks`.
+///
+/// Deliberately does NOT touch the legacy Orchard tree: Ironwood has its own
+/// commitment tree, and appending its leaves to ours would shift every
+/// legacy position after the fork and break legacy spends.
+///
+/// Uses Orchard note encryption. Ironwood outputs are built from Orchard
+/// addresses and notes (see `add_ironwood_output` in the spender), so this
+/// is expected to decrypt them; if a sync reports Ironwood actions inspected
+/// but never finds a known deposit, that assumption is the first suspect.
+pub fn detect_ironwood(
+    block: &proto::CompactBlock,
+    ivks: &[PreparedIncomingViewingKey],
+    hits: &mut Vec<IronwoodHit>,
+    progress: &mut ScanProgress,
+) {
+    let height = block.height;
+    let mut vtx: Vec<&proto::CompactTx> = block.vtx.iter().collect();
+    vtx.sort_by_key(|t| t.index);
+
+    for tx in vtx {
+        for action in &tx.ironwood_actions {
+            progress.ironwood_actions_inspected += 1;
+            let (Some(nf_bytes), Some(cmx_bytes), Some(epk_bytes)) = (
+                bytes32(&action.nullifier),
+                bytes32(&action.cmx),
+                bytes32(&action.ephemeral_key),
+            ) else {
+                continue;
+            };
+            progress.ironwood_nullifiers.insert(nf_bytes);
+            if action.ciphertext.len() != 52 {
+                continue;
+            }
+            let (Some(cmx), Some(nullifier)) = (
+                ExtractedNoteCommitment::from_bytes(&cmx_bytes).into_option(),
+                Nullifier::from_bytes(&nf_bytes).into_option(),
+            ) else {
+                continue;
+            };
+            let mut enc = [0u8; 52];
+            enc.copy_from_slice(&action.ciphertext);
+            let compact =
+                CompactAction::from_parts(nullifier, cmx, EphemeralKeyBytes(epk_bytes), enc);
+            let domain = OrchardDomain::for_compact_action(&compact);
+            if let Some((note, _)) = ivks
+                .iter()
+                .find_map(|k| try_compact_note_decryption(&domain, k, &compact))
+            {
+                let mut txid = tx.hash.clone();
+                txid.reverse();
+                hits.push(IronwoodHit {
+                    value_zatoshi: note.value().inner(),
+                    block_height: height,
+                    tx_index: tx.index,
+                    txid_hex: hex::encode(txid),
+                    nullifier_bytes: nf_bytes,
+                    note,
+                });
+            }
+        }
     }
 }
