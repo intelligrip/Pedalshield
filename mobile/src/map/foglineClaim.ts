@@ -204,3 +204,24 @@ export function buildFoglineClaim(
   assertFoglineClaimSafe(claim);
   return claim;
 }
+
+/**
+ * Canonical message the device signs for a Fogline claim. MUST match
+ * `fogline::signing_message` in zcash-service byte for byte — both sides pin
+ * the same test vector. Binds the quest tiles, so a captured signature
+ * cannot be replayed with a different tile set or redirected to another UA.
+ */
+export function foglineSigningMessage(
+  claim: FoglineClaim,
+  recipientUa: string,
+  signedAt: number,
+): string {
+  return [
+    'fogline-claim-v1',
+    claim.rideId,
+    recipientUa,
+    claim.questId,
+    claim.questTiles.join(','),
+    String(signedAt),
+  ].join('|');
+}

@@ -99,6 +99,10 @@ struct AppState {
     /// list, /withdraw, /settle, /admin). Read from PEDALSHIELD_ADMIN_TOKEN.
     /// When None/empty those endpoints fail closed (locked).
     admin_token: Option<String>,
+    /// Fogline quest drops. FOGLINE_PAYOUTS=0 accepts claims (the atlas
+    /// still updates on the phone) but never spends — every eligible claim
+    /// answers `treasury_paused`.
+    fogline_payouts: bool,
 }
 
 // ---------------------------------------------------------------------
@@ -483,7 +487,21 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     // explicit and the first payout after a top-up predictable.
     if env::var("PEDALSHIELD_FULL_RESCAN").ok().as_deref() == Some("1") {
         clear_scan_from(&conn);
+        // A top-up invalidates the cached balance the Fogline gate reads.
+        pedalshield_treasury::fogline::clear_known_balance(&conn);
     }
+
+    // Fogline ledger (additive, idempotent).
+    conn.execute_batch(pedalshield_treasury::fogline::SCHEMA)?;
+    // Same crash-recovery reasoning as above. A Fogline drop abandoned
+    // mid-payout is marked failed rather than retried: it stops counting
+    // against the rider's daily cap, so their next quest ride can pay.
+    let _ = conn.execute(
+        "UPDATE fogline_claims SET status = 'failed', updated_at = ?1,
+             reason = 'auto-recovered: payout abandoned at restart'
+         WHERE status = 'paying'",
+        params![now_secs() as i64],
+    );
 
     Ok(conn)
 }
@@ -2150,6 +2168,14 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
                 // note is created by this tx, so tip-at-build minus the reorg
                 // margin is guaranteed to still contain it.
                 set_scan_from(&conn, r.tip_height.saturating_sub(WATERMARK_REORG_MARGIN));
+                // Single-note wallet: change is the remaining balance. Keeps
+                // the Fogline treasury gate honest if both paths ever spend.
+                pedalshield_treasury::fogline::record_after_payout(
+                    &conn,
+                    r.change_value_zat,
+                    r.fee_zat,
+                    now_secs(),
+                );
                 if r.full_rescan_used {
                     tracing::warn!(
                         claim_id = %id,
@@ -2743,6 +2769,252 @@ async fn leaderboard_handler(
 // main
 // ---------------------------------------------------------------------
 
+// ---------------------------------------------------------------------
+// Fogline — quest drops from the 0.1 ZEC demo pot
+// ---------------------------------------------------------------------
+//
+// Separate ledger, separate endpoint, same spender. Pure rules live in
+// `pedalshield_treasury::fogline` (unit-tested); this is only the plumbing.
+//
+// The order of checks is the policy:
+//   1. parse        deny_unknown_fields — a claim carrying location or
+//                   sensor data never reaches step 2 (axum answers 422)
+//   2. evaluate     version, pass bit, tiles ⊆ quest, predicate
+//   3. signature    same device key + rollout flag as /claim
+//   4. idempotency  a repeated ride_id returns the existing row
+//   5. caps         1 paid quest / UA / UTC day, 50 / day globally
+//   6. treasury     balance − reserve must cover drop + fee, else
+//                   `treasury_paused` (claim accepted, nothing spent)
+//   7. pay          10_001 zat via spender::pay, serialized on payout_lock
+// Steps 4–6 and the insert run under one DB lock, so two concurrent claims
+// cannot both squeeze under a cap.
+
+use pedalshield_treasury::fogline;
+
+async fn post_fogline_claim(
+    State(state): State<AppState>,
+    Json(body): Json<fogline::FoglineSubmit>,
+) -> Result<(StatusCode, Json<fogline::FoglineRow>), AppError> {
+    validate_ua(&body.recipient_ua)?;
+    let eligibility = fogline::evaluate(&body.claim).map_err(AppError::BadRequest)?;
+    let ride_id = body.claim.ride_id.clone();
+
+    match (&body.rider_id, body.signed_at, &body.signature) {
+        (Some(rider_id), Some(signed_at), Some(sig)) => {
+            let skew = now_secs().abs_diff(signed_at);
+            if skew > state.claim_signature_max_age_s {
+                return Err(AppError::BadRequest(format!(
+                    "claim signature is stale ({}s old, max {}s)",
+                    skew, state.claim_signature_max_age_s
+                )));
+            }
+            let pubkey = {
+                let conn = state.db.lock().unwrap();
+                rider_pubkey(&conn, rider_id).map_err(|e| AppError::Internal(format!("db: {e}")))?
+            }
+            .ok_or_else(|| AppError::BadRequest("unknown or revoked rider_id".into()))?;
+            let msg = fogline::signing_message(&body.claim, &body.recipient_ua, signed_at);
+            verify_claim_signature(&pubkey, sig, &msg).map_err(|why| {
+                tracing::warn!(rider_id = %rider_id, %why, "fogline signature REJECTED");
+                AppError::BadRequest(format!("claim signature invalid: {why}"))
+            })?;
+        }
+        _ if state.require_signed_claims => {
+            return Err(AppError::BadRequest(
+                "fogline claims must be signed (rider_id + signed_at + signature)".into(),
+            ));
+        }
+        _ => tracing::warn!(%ride_id, "UNSIGNED fogline claim accepted (grace mode)"),
+    }
+
+    let now = now_secs();
+    let day = fogline::utc_day(now);
+    let (status, reason): (&str, Option<String>) = {
+        let conn = state.db.lock().unwrap();
+        let db = |e: rusqlite::Error| AppError::Internal(format!("db: {e}"));
+
+        if let Some(existing) = fogline::fetch(&conn, &ride_id).map_err(db)? {
+            return Ok((StatusCode::OK, Json(existing)));
+        }
+
+        let decision = match eligibility {
+            fogline::Eligibility::Incomplete { hit, need } => {
+                ("incomplete", Some(format!("{hit} of {need} quest tiles")))
+            }
+            fogline::Eligibility::Complete => {
+                if fogline::paid_today_for(&conn, &body.recipient_ua, day).map_err(db)?
+                    >= fogline::DAILY_PAID_PER_UA
+                {
+                    ("capped", Some("one paid quest per address per day".into()))
+                } else if fogline::paid_today_global(&conn, day).map_err(db)?
+                    >= fogline::DAILY_PAID_GLOBAL
+                {
+                    ("capped", Some("daily drop budget reached".into()))
+                } else if !state.fogline_payouts
+                    || state.spending_key_path.is_none()
+                    || !fogline::treasury_can_pay(
+                        fogline::known_balance(&conn),
+                        fogline::fee_estimate(&conn),
+                    )
+                {
+                    ("treasury_paused", Some("demo pot is paused or spent".into()))
+                } else {
+                    ("paying", None)
+                }
+            }
+        };
+
+        fogline::insert(
+            &conn,
+            &ride_id,
+            &body.recipient_ua,
+            &body.claim.quest_id,
+            &body.claim.quest_tiles,
+            decision.0,
+            decision.1.as_deref(),
+            now,
+        )
+        .map_err(db)?;
+        decision
+    };
+
+    if status == "paying" {
+        let st = state.clone();
+        let ua = body.recipient_ua.clone();
+        let id = ride_id.clone();
+        tokio::spawn(async move { run_fogline_payout(st, id, ua).await });
+    }
+
+    tracing::info!(%ride_id, status, "fogline claim accepted");
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(fogline::FoglineRow {
+            ride_id,
+            status: status.to_string(),
+            payout_zat: None,
+            payout_txid: None,
+            reason,
+        }),
+    ))
+}
+
+async fn run_fogline_payout(state: AppState, ride_id: String, ua: String) {
+    let fail = |state: &AppState, why: String| {
+        tracing::warn!(%ride_id, %why, "fogline payout failed");
+        let conn = state.db.lock().unwrap();
+        let _ = fogline::set_status(&conn, &ride_id, "failed", None, None, Some(&why), now_secs());
+    };
+
+    let sk = match load_spending_key(&state) {
+        Ok(sk) => sk,
+        Err(e) => return fail(&state, e),
+    };
+
+    // Everything from the final balance check to recording the result runs
+    // under payout_lock, so a queued second drop sees the first one's change.
+    let _guard = state.payout_lock.lock().await;
+
+    let (can_pay, scan_from) = {
+        let conn = state.db.lock().unwrap();
+        (
+            fogline::treasury_can_pay(fogline::known_balance(&conn), fogline::fee_estimate(&conn)),
+            get_scan_from(&conn, state.birthday),
+        )
+    };
+    if !can_pay {
+        let conn = state.db.lock().unwrap();
+        let _ = fogline::set_status(
+            &conn,
+            &ride_id,
+            "treasury_paused",
+            None,
+            None,
+            Some("demo pot reached its reserve"),
+            now_secs(),
+        );
+        return;
+    }
+
+    let result = pedalshield_treasury::spend::spender::pay(
+        &state.lightwalletd,
+        &sk,
+        &ua,
+        fogline::PAYOUT_ZAT,
+        state.birthday,
+        scan_from,
+        true,
+    )
+    .await
+    .map_err(|e| e.to_string());
+
+    match result {
+        Ok(r) => match r.broadcast {
+            Some((0, _)) => {
+                let now = now_secs();
+                let conn = state.db.lock().unwrap();
+                let _ = fogline::set_status(
+                    &conn,
+                    &ride_id,
+                    "paid",
+                    Some(&r.txid_hex),
+                    Some(fogline::PAYOUT_ZAT),
+                    None,
+                    now,
+                );
+                set_scan_from(&conn, r.tip_height.saturating_sub(WATERMARK_REORG_MARGIN));
+                fogline::record_after_payout(&conn, r.change_value_zat, r.fee_zat, now);
+                tracing::info!(
+                    %ride_id,
+                    txid = %r.txid_hex,
+                    fee = r.fee_zat,
+                    remaining = r.change_value_zat,
+                    "fogline drop paid"
+                );
+            }
+            Some((code, msg)) => fail(&state, format!("broadcast rejected ({code}): {msg}")),
+            None => fail(&state, "payout was not broadcast".into()),
+        },
+        Err(e) => fail(&state, format!("payout error: {e}")),
+    }
+}
+
+async fn get_fogline_claim(
+    State(state): State<AppState>,
+    Path(ride_id): Path<String>,
+) -> Result<Json<fogline::FoglineRow>, AppError> {
+    let conn = state.db.lock().unwrap();
+    fogline::fetch(&conn, &ride_id)
+        .map_err(|e| AppError::Internal(format!("db: {e}")))?
+        .map(Json)
+        .ok_or_else(|| AppError::NotFound(format!("no fogline claim {ride_id}")))
+}
+
+#[derive(Debug, Serialize)]
+struct FoglineStatus {
+    paused: bool,
+    payout_zat: u64,
+    fee_estimate_zat: u64,
+    /// Rough drops left above the reserve; None until the first payout
+    /// reveals the balance.
+    drops_remaining: Option<u64>,
+}
+
+async fn fogline_status(State(state): State<AppState>) -> Json<FoglineStatus> {
+    let conn = state.db.lock().unwrap();
+    let known = fogline::known_balance(&conn);
+    let fee = fogline::fee_estimate(&conn);
+    let per_drop = fogline::PAYOUT_ZAT + fee;
+    Json(FoglineStatus {
+        paused: !state.fogline_payouts
+            || state.spending_key_path.is_none()
+            || !fogline::treasury_can_pay(known, fee),
+        payout_zat: fogline::PAYOUT_ZAT,
+        fee_estimate_zat: fee,
+        drops_remaining: known.map(|b| b.saturating_sub(fogline::FEE_RESERVE_ZAT) / per_drop),
+    })
+}
+
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -2870,6 +3142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         accrual_mode,
         payout_floor_zat,
         admin_token,
+        fogline_payouts: env::var("FOGLINE_PAYOUTS").ok().as_deref() != Some("0"),
     };
 
     // Background settlement sweep: only runs in accrual mode.
@@ -2915,6 +3188,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/leaderboard", get(leaderboard_handler))
         .route("/handle/:ua", post(set_handle_handler))
         .route("/coop/contribute", post(coop_contribute_handler))
+        .route("/fogline/claim", post(post_fogline_claim))
+        .route("/fogline/claim/:ride_id", get(get_fogline_claim))
+        .route("/fogline/status", get(fogline_status))
         .merge(admin)
         .layer(TraceLayer::new_for_http())
         .with_state(state);

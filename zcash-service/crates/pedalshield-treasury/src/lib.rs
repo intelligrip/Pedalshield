@@ -18,6 +18,7 @@
 pub mod accrual;
 pub mod anomaly;
 pub mod error;
+pub mod fogline;
 pub mod frost_coordinator;
 pub mod ledger;
 pub mod oracle;

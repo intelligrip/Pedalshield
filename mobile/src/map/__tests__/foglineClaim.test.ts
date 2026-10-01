@@ -15,6 +15,7 @@ import {
   assertFoglineClaimSafe,
   buildFoglineClaim,
   distanceBandFor,
+  foglineSigningMessage,
   type FoglineQuest,
 } from '../foglineClaim.ts';
 import { tileIdFor, tilesForRide } from '../tiles.ts';
@@ -183,5 +184,26 @@ describe('distance bands', () => {
     assert.equal(distanceBandFor(5), '5to10');
     assert.equal(distanceBandFor(12.3), '10to20');
     assert.equal(distanceBandFor(80), '20plus');
+  });
+});
+
+describe('signing message (cross-language protocol)', () => {
+  it('matches the vector pinned in zcash-service fogline.rs', () => {
+    const msg = foglineSigningMessage(
+      {
+        v: 1,
+        rideId: '01HXVECTOR0001',
+        questId: 'q-bend-river-line',
+        questTiles: ['fl1:-30067:11400', 'fl1:-30069:11405'],
+        pass: true,
+        distanceBand: '5to10',
+      },
+      'u1vector',
+      1800000000,
+    );
+    assert.equal(
+      msg,
+      'fogline-claim-v1|01HXVECTOR0001|u1vector|q-bend-river-line|fl1:-30067:11400,fl1:-30069:11405|1800000000',
+    );
   });
 });
