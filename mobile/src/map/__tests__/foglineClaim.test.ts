@@ -1,9 +1,7 @@
 /**
- * Fogline claim — privacy contract. Mirrors and tightens the public
- * `toClaimPayload` tests in verification/__tests__/engine.public.test.ts.
- *
- * If one of these fails, a change is trying to send something off the phone
- * that the Fogline promise says never leaves. Fix the change, not the test.
+ * Fogline claim — privacy contract. Nothing about where you rode leaves the
+ * phone: no coordinates, no sensors, no timestamps, no distance, and no
+ * tiles. If one of these fails, fix the change, not the test.
  */
 
 import { describe, it } from 'node:test';
@@ -14,8 +12,8 @@ import {
   FORBIDDEN_KEYS,
   assertFoglineClaimSafe,
   buildFoglineClaim,
-  distanceBandFor,
   foglineSigningMessage,
+  questTilesHit,
   type FoglineQuest,
 } from '../foglineClaim.ts';
 import { tileIdFor, tilesForRide } from '../tiles.ts';
@@ -51,76 +49,64 @@ function verified(over: Partial<RideVerificationResult> = {}): RideVerificationR
   };
 }
 
-const geo = fixtureGeo();
-const rideTiles = tilesForRide(geo);
-
-// Quest: two cells on the ride, one far away. Public by construction.
-const ON_A = rideTiles[2];
-const ON_B = rideTiles[5];
+const rideTiles = tilesForRide(fixtureGeo());
 const OFF = tileIdFor(BASE.lat + 0.05, BASE.lon);
-const QUEST: FoglineQuest = { id: 'q-bend-001', tiles: [ON_A, ON_B, OFF] };
 
+// Three of four quest tiles lie on the ride.
+const QUEST: FoglineQuest = {
+  id: 'q-bend-001',
+  tiles: [rideTiles[1], rideTiles[3], rideTiles[5], OFF],
+  need: 3,
+};
 const ATTEST = { platform: 'ios' as const, token: 'eyJhbGciOi.payload.sig', issuedAt: 1_700_000_000_000 };
 
 describe('fogline claim — shape', () => {
   const claim = buildFoglineClaim(verified(), rideTiles, QUEST, ATTEST)!;
 
-  it('is built for a verified ride that touched the quest', () => {
+  it('is built for a verified ride that completed the quest', () => {
     assert.ok(claim);
+    assert.equal(questTilesHit(QUEST, rideTiles), 3);
   });
 
   it('contains exactly the allowed keys', () => {
     assert.deepEqual(Object.keys(claim).sort(), [...FOGLINE_CLAIM_KEYS].sort());
+    assert.deepEqual([...FOGLINE_CLAIM_KEYS].sort(), ['attestation', 'pass', 'questId', 'rideId', 'v']);
   });
 
   it('omits attestation cleanly when there is none', () => {
     const c = buildFoglineClaim(verified(), rideTiles, QUEST)!;
-    assert.deepEqual(
-      Object.keys(c).sort(),
-      FOGLINE_CLAIM_KEYS.filter((k) => k !== 'attestation').sort(),
-    );
-  });
-
-  it('discloses only ride ∩ quest tiles — never the rest of the atlas', () => {
-    assert.deepEqual(claim.questTiles, [ON_A, ON_B].sort());
-    assert.ok(rideTiles.length > claim.questTiles.length + 3, 'fixture sanity');
-    const json = JSON.stringify(claim);
-    for (const t of rideTiles) {
-      if (t !== ON_A && t !== ON_B) assert.ok(!json.includes(t), `leaked atlas tile ${t}`);
-    }
-  });
-
-  it('never claims a quest tile the ride did not touch', () => {
-    assert.ok(!claim.questTiles.includes(OFF));
-  });
-
-  it('reports a distance band, not exact distance', () => {
-    assert.equal(claim.distanceBand, 'lt5');
-    assert.ok(!JSON.stringify(claim).includes('4.0'));
+    assert.deepEqual(Object.keys(c).sort(), ['pass', 'questId', 'rideId', 'v']);
   });
 });
 
-describe('fogline claim — nothing forbidden, at any depth', () => {
+describe('fogline claim — no location of any kind leaves the phone', () => {
   const claim = buildFoglineClaim(verified(), rideTiles, QUEST, ATTEST)!;
   const json = JSON.stringify(claim);
 
-  it('no forbidden key appears anywhere in the JSON', () => {
+  it('no tile id appears anywhere — not even quest tiles', () => {
+    for (const t of [...rideTiles, ...QUEST.tiles]) {
+      assert.equal(json.includes(t), false, `tile ${t} left the phone`);
+    }
+    assert.equal(/fl\d+:-?\d+:-?\d+/.test(json), false);
+  });
+
+  it('no forbidden key appears anywhere', () => {
     for (const k of FORBIDDEN_KEYS) {
-      assert.equal(json.includes(`"${k}"`), false, `forbidden key "${k}" leaked`);
+      assert.equal(json.includes(`"${k}"`), false, `forbidden key "${k}"`);
     }
   });
 
-  it('no fixture coordinate digits appear anywhere', () => {
+  it('no coordinate digits appear anywhere', () => {
     assert.equal(json.includes('44.05'), false);
     assert.equal(json.includes('121.3'), false);
     assert.equal(/-?\d{1,3}\.\d{4,}/.test(json.replace(ATTEST.token, '')), false);
   });
 
-  it('carries no ride timestamps, engine flags or free-text detail', () => {
-    for (const k of ['startedAt', 'endedAt', 'computedAt', 'flags', 'detail', 'integrityScore']) {
+  it('no timestamps, distance, score or engine flags', () => {
+    for (const k of ['startedAt', 'endedAt', 'computedAt', 'flags', 'detail', 'integrityScore', 'verifiedKm', 'distanceBand']) {
       assert.equal(json.includes(`"${k}"`), false, k);
     }
-    assert.equal(json.includes('drift'), false, 'engine flag detail leaked');
+    assert.equal(json.includes('drift'), false);
   });
 });
 
@@ -131,7 +117,7 @@ describe('fogline claim — the guard rejects tampering', () => {
     assert.doesNotThrow(() => assertFoglineClaimSafe(good()));
   });
 
-  for (const k of ['lat', 'lon', 'polyline', 'accel', 'gyro', 'barometer', 'pedometer', 'pressure', 'placeName', 'startedAt']) {
+  for (const k of ['lat', 'lon', 'polyline', 'questTiles', 'tiles', 'accel', 'gyro', 'barometer', 'pedometer', 'pressure', 'placeName', 'startedAt', 'distanceBand']) {
     it(`rejects a top-level "${k}"`, () => {
       assert.throws(() => assertFoglineClaimSafe({ ...good(), [k]: 1 }));
     });
@@ -139,71 +125,56 @@ describe('fogline claim — the guard rejects tampering', () => {
 
   it('rejects a forbidden key nested inside attestation', () => {
     const c = good() as unknown as Record<string, unknown>;
-    c.attestation = { ...ATTEST, lat: 44 };
+    c.attestation = { ...ATTEST, tiles: 'x' };
     assert.throws(() => assertFoglineClaimSafe(c));
   });
 
-  it('rejects a coordinate hidden in an innocent field', () => {
-    assert.throws(() => assertFoglineClaimSafe({ ...good(), questId: 'q 44.0581,-121.3350' }));
-    assert.throws(() => assertFoglineClaimSafe({ ...good(), questTiles: ['44.0581'] }));
+  it('rejects a tile or coordinate hidden in an innocent field', () => {
+    assert.throws(() => assertFoglineClaimSafe({ ...good(), questId: `q ${rideTiles[0]}` }));
+    assert.throws(() => assertFoglineClaimSafe({ ...good(), rideId: 'r 44.0581,-121.3350' }));
   });
 
-  it('rejects any non-integer number (smuggled coordinate)', () => {
+  it('rejects any array (where a route would hide)', () => {
+    const c = good() as unknown as Record<string, unknown>;
+    c.attestation = { ...ATTEST, token: ['a', 'b'] };
+    assert.throws(() => assertFoglineClaimSafe(c));
+  });
+
+  it('rejects any non-integer number', () => {
     const c = good() as unknown as Record<string, unknown>;
     c.attestation = { ...ATTEST, issuedAt: 44.0581 };
     assert.throws(() => assertFoglineClaimSafe(c));
   });
-
-  it('rejects malformed tile ids', () => {
-    assert.throws(() => assertFoglineClaimSafe({ ...good(), questTiles: ['fl1:1'] }));
-  });
 });
 
-describe('fogline claim — sends nothing when there is nothing to send', () => {
+describe('fogline claim — nothing is sent unless the quest is complete', () => {
   it('no claim for a rejected or review ride', () => {
     assert.equal(buildFoglineClaim(verified({ status: 'rejected' }), rideTiles, QUEST), null);
     assert.equal(buildFoglineClaim(verified({ status: 'review' }), rideTiles, QUEST), null);
   });
 
-  it('no claim when the ride missed every quest tile', () => {
-    assert.equal(
-      buildFoglineClaim(verified(), rideTiles, { id: 'q-far', tiles: [OFF] }),
-      null,
-    );
+  it('no claim below the threshold — partial progress stays on the phone', () => {
+    const twoOnly = rideTiles.filter((t) => t !== rideTiles[5]);
+    assert.equal(questTilesHit(QUEST, twoOnly), 2);
+    assert.equal(buildFoglineClaim(verified(), twoOnly, QUEST), null);
   });
 
   it('no claim when the ride unlocked nothing', () => {
     assert.equal(buildFoglineClaim(verified(), [], QUEST), null);
   });
-});
 
-describe('distance bands', () => {
-  it('bucket coarsely and handle junk', () => {
-    assert.equal(distanceBandFor(0), 'lt5');
-    assert.equal(distanceBandFor(Number.NaN), 'lt5');
-    assert.equal(distanceBandFor(5), '5to10');
-    assert.equal(distanceBandFor(12.3), '10to20');
-    assert.equal(distanceBandFor(80), '20plus');
+  it('duplicate tiles do not pad the count', () => {
+    assert.equal(questTilesHit(QUEST, [rideTiles[1], rideTiles[1], rideTiles[1]]), 1);
   });
 });
 
 describe('signing message (cross-language protocol)', () => {
   it('matches the vector pinned in zcash-service fogline.rs', () => {
     const msg = foglineSigningMessage(
-      {
-        v: 1,
-        rideId: '01HXVECTOR0001',
-        questId: 'q-bend-river-line',
-        questTiles: ['fl1:-30067:11400', 'fl1:-30069:11405'],
-        pass: true,
-        distanceBand: '5to10',
-      },
+      { v: 1, rideId: '01HXVECTOR0001', questId: 'q-bend-river-line', pass: true },
       'u1vector',
       1800000000,
     );
-    assert.equal(
-      msg,
-      'fogline-claim-v1|01HXVECTOR0001|u1vector|q-bend-river-line|fl1:-30067:11400,fl1:-30069:11405|1800000000',
-    );
+    assert.equal(msg, 'fogline-claim-v1|01HXVECTOR0001|u1vector|q-bend-river-line|1800000000');
   });
 });

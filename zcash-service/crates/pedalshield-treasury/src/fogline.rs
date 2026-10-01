@@ -4,17 +4,18 @@
 //! the ledger queries). The HTTP handler and the spend live in
 //! `bin/backend.rs`, next to the existing payout path they reuse.
 //!
-//! PRIVACY. The wire claim is parsed with `deny_unknown_fields`, so the
-//! server enforces the same contract as `mobile/src/map/foglineClaim.ts`: a
-//! claim carrying `lat`, `polyline`, sensor data or any field not on the list
-//! is rejected before it is looked at. The server never sees a rider's atlas
-//! — only the ride's tiles that are inside the (public) quest.
+//! PRIVACY. Nothing about where a rider went reaches this server: no
+//! coordinates, no sensors, no timestamps, no distance, and no tiles. The
+//! quest is evaluated on the phone; the claim says only "a verified ride
+//! completed quest X". The wire structs use `deny_unknown_fields`, so a claim
+//! that tries to carry `lat`, `polyline`, `questTiles` or anything else not
+//! on the list is rejected before it is read — the server enforces the same
+//! contract as `mobile/src/map/foglineClaim.ts`.
 //!
 //! QUESTS. `mobile/src/map/quests.json` is embedded at compile time. The
 //! app's copy is pinned to the same file by a test, so the predicate the
 //! phone shows and the predicate the treasury pays on are the same bytes.
 
-use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -41,9 +42,6 @@ pub const DAILY_PAID_PER_UA: u64 = 1;
 /// Paid quests across everyone per UTC day. Bounds how fast a patched app
 /// with many addresses can drain the demo pot.
 pub const DAILY_PAID_GLOBAL: u64 = 50;
-/// No quest has more stops than this; anything bigger is malformed.
-pub const MAX_QUEST_TILES: usize = 64;
-
 pub const CLAIM_VERSION: u32 = 1;
 
 // ---------------------------------------------------------------------
@@ -68,12 +66,6 @@ pub struct QuestDef {
 pub struct QuestStop {
     pub label: String,
     pub tile: String,
-}
-
-impl QuestDef {
-    pub fn tiles(&self) -> HashSet<&str> {
-        self.stops.iter().map(|s| s.tile.as_str()).collect()
-    }
 }
 
 /// All quests. Panics at first use if the embedded JSON is malformed, which
@@ -127,11 +119,7 @@ pub struct FoglineClaim {
     pub ride_id: String,
     #[serde(rename = "questId")]
     pub quest_id: String,
-    #[serde(rename = "questTiles")]
-    pub quest_tiles: Vec<String>,
     pub pass: bool,
-    #[serde(rename = "distanceBand")]
-    pub distance_band: String,
     pub attestation: Option<Attestation>,
 }
 
@@ -147,32 +135,21 @@ pub struct FoglineSubmit {
     pub signed_at: Option<u64>,
 }
 
-/// Canonical message the device signs for a Fogline claim. Binds the quest
-/// tiles, so a captured signature cannot be replayed with a different set.
-/// Field order is protocol; version the prefix if it ever changes.
+/// Canonical message the device signs for a Fogline claim. Binds the UA so
+/// a captured signature cannot be redirected to another wallet. Field order
+/// is protocol; version the prefix if it ever changes.
 pub fn signing_message(c: &FoglineClaim, recipient_ua: &str, signed_at: u64) -> String {
     format!(
-        "fogline-claim-v1|{}|{}|{}|{}|{}",
-        c.ride_id,
-        recipient_ua,
-        c.quest_id,
-        c.quest_tiles.join(","),
-        signed_at
+        "fogline-claim-v1|{}|{}|{}|{}",
+        c.ride_id, recipient_ua, c.quest_id, signed_at
     )
 }
 
-/// The result of checking a claim against its quest.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Eligibility {
-    /// Predicate satisfied: may be paid, subject to caps and the treasury.
-    Complete,
-    /// Valid claim, quest not finished. Accepted, never paid.
-    Incomplete { hit: usize, need: usize },
-}
-
-/// Structural validation plus the quest predicate. `Err` is a 400: the
-/// claim is malformed or dishonest (e.g. claims a tile outside the quest).
-pub fn evaluate(c: &FoglineClaim) -> Result<Eligibility, String> {
+/// Structural validation. `Err` is a 400. The quest predicate itself is
+/// evaluated on the phone — the server never receives the tiles it would
+/// need to re-check it, by design. What the server can and does check: the
+/// claim is well-formed, the ride verified, and the quest exists.
+pub fn evaluate(c: &FoglineClaim) -> Result<&'static QuestDef, String> {
     if c.v != CLAIM_VERSION {
         return Err(format!("unsupported claim version {}", c.v));
     }
@@ -185,36 +162,7 @@ pub fn evaluate(c: &FoglineClaim) -> Result<Eligibility, String> {
     {
         return Err("rideId is malformed".into());
     }
-    if !matches!(c.distance_band.as_str(), "lt5" | "5to10" | "10to20" | "20plus") {
-        return Err("distanceBand is malformed".into());
-    }
-    let q = quest(&c.quest_id).ok_or_else(|| format!("unknown quest {}", c.quest_id))?;
-    if c.quest_tiles.len() > MAX_QUEST_TILES {
-        return Err("too many tiles".into());
-    }
-
-    let allowed = q.tiles();
-    let mut seen: HashSet<&str> = HashSet::new();
-    for t in &c.quest_tiles {
-        if !is_tile_id(t) {
-            return Err(format!("not a tile id: {t}"));
-        }
-        // The client discloses only ride ∩ quest. A tile outside the quest
-        // is either a bug that leaks location or a forged claim; refuse both.
-        if !allowed.contains(t.as_str()) {
-            return Err("claim contains a tile outside the quest".into());
-        }
-        if !seen.insert(t.as_str()) {
-            return Err("duplicate tile".into());
-        }
-    }
-
-    let need = q.need.clamp(1, q.stops.len().max(1));
-    if seen.len() >= need {
-        Ok(Eligibility::Complete)
-    } else {
-        Ok(Eligibility::Incomplete { hit: seen.len(), need })
-    }
+    quest(&c.quest_id).ok_or_else(|| format!("unknown quest {}", c.quest_id))
 }
 
 // ---------------------------------------------------------------------
@@ -240,9 +188,8 @@ pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS fogline_claims (
     ride_id        TEXT PRIMARY KEY,
     recipient_ua   TEXT NOT NULL,
-    quest_id       TEXT NOT NULL,
-    quest_tiles    TEXT NOT NULL,   -- comma-joined, quest tiles only
-    status         TEXT NOT NULL,   -- incomplete|capped|treasury_paused|paying|paid|failed
+    quest_id       TEXT NOT NULL,   -- no tiles, no route: see module docs
+    status         TEXT NOT NULL,   -- capped|treasury_paused|paying|paid|failed
     payout_zat     INTEGER,
     payout_txid    TEXT,
     reason         TEXT,
@@ -315,16 +262,15 @@ pub fn insert(
     ride_id: &str,
     ua: &str,
     quest_id: &str,
-    tiles: &[String],
     status: &str,
     reason: Option<&str>,
     now: u64,
 ) -> rusqlite::Result<bool> {
     let n = conn.execute(
         "INSERT OR IGNORE INTO fogline_claims
-           (ride_id, recipient_ua, quest_id, quest_tiles, status, reason, utc_day, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-        params![ride_id, ua, quest_id, tiles.join(","), status, reason, utc_day(now), now as i64],
+           (ride_id, recipient_ua, quest_id, status, reason, utc_day, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+        params![ride_id, ua, quest_id, status, reason, utc_day(now), now as i64],
     )?;
     Ok(n == 1)
 }
@@ -401,21 +347,14 @@ pub fn clear_known_balance(conn: &Connection) {
 mod tests {
     use super::*;
 
-    fn claim(tiles: &[&str]) -> FoglineClaim {
-        let q = &quests()[0];
+    fn claim() -> FoglineClaim {
         FoglineClaim {
             v: 1,
             ride_id: "01HXTEST000001".into(),
-            quest_id: q.id.clone(),
-            quest_tiles: tiles.iter().map(|s| s.to_string()).collect(),
+            quest_id: quests()[0].id.clone(),
             pass: true,
-            distance_band: "5to10".into(),
             attestation: None,
         }
-    }
-
-    fn stops() -> Vec<String> {
-        quests()[0].stops.iter().map(|s| s.tile.clone()).collect()
     }
 
     #[test]
@@ -442,63 +381,21 @@ mod tests {
     }
 
     #[test]
-    fn complete_at_threshold() {
-        let s = stops();
-        let c = claim(&[&s[0], &s[2], &s[4]]);
-        assert_eq!(evaluate(&c), Ok(Eligibility::Complete));
+    fn accepts_a_wellformed_claim() {
+        assert_eq!(evaluate(&claim()).unwrap().id, "q-bend-river-line");
     }
 
     #[test]
-    fn incomplete_below_threshold() {
-        let s = stops();
-        assert_eq!(
-            evaluate(&claim(&[&s[1]])),
-            Ok(Eligibility::Incomplete { hit: 1, need: 3 })
-        );
-    }
-
-    #[test]
-    fn rejects_tiles_outside_the_quest() {
-        let s = stops();
-        assert!(evaluate(&claim(&[&s[0], &s[1], "fl1:0:0"])).is_err());
-    }
-
-    #[test]
-    fn rejects_duplicates_padding_the_count() {
-        let s = stops();
-        assert!(evaluate(&claim(&[&s[0], &s[0], &s[0]])).is_err());
-    }
-
-    #[test]
-    fn rejects_failed_rides_and_unknown_quests() {
-        let s = stops();
-        let mut c = claim(&[&s[0], &s[1], &s[2]]);
+    fn rejects_failed_rides_unknown_quests_and_bad_ids() {
+        let mut c = claim();
         c.pass = false;
         assert!(evaluate(&c).is_err());
-        let mut c = claim(&[&s[0]]);
+        let mut c = claim();
         c.quest_id = "nope".into();
         assert!(evaluate(&c).is_err());
-    }
-
-    #[test]
-    fn wire_format_rejects_location_fields() {
-        let s = stops();
-        let ok = format!(
-            r#"{{"claim":{{"v":1,"rideId":"01HXA","questId":"q-bend-river-line","questTiles":["{}"],"pass":true,"distanceBand":"lt5"}},"recipient_ua":"u1x"}}"#,
-            s[0]
-        );
-        assert!(serde_json::from_str::<FoglineSubmit>(&ok).is_ok());
-
-        for leak in [r#""lat":44.05"#, r#""polyline":"abc""#, r#""accel":[]"#, r#""startedAt":1"#] {
-            let bad = ok.replacen(r#""pass":true"#, &format!(r#""pass":true,{leak}"#), 1);
-            assert!(serde_json::from_str::<FoglineSubmit>(&bad).is_err(), "accepted {leak}");
-        }
-        let nested = ok.replacen(
-            r#""pass":true"#,
-            r#""pass":true,"attestation":{"platform":"ios","token":"t","issuedAt":1,"lat":44}"#,
-            1,
-        );
-        assert!(serde_json::from_str::<FoglineSubmit>(&nested).is_err());
+        let mut c = claim();
+        c.ride_id = "fl1:1:2".into();
+        assert!(evaluate(&c).is_err(), "a tile smuggled in as a ride id");
     }
 
     #[test]
@@ -508,15 +405,40 @@ mod tests {
             v: 1,
             ride_id: "01HXVECTOR0001".into(),
             quest_id: "q-bend-river-line".into(),
-            quest_tiles: vec!["fl1:-30067:11400".into(), "fl1:-30069:11405".into()],
             pass: true,
-            distance_band: "5to10".into(),
             attestation: None,
         };
         assert_eq!(
             signing_message(&c, "u1vector", 1_800_000_000),
-            "fogline-claim-v1|01HXVECTOR0001|u1vector|q-bend-river-line|fl1:-30067:11400,fl1:-30069:11405|1800000000"
+            "fogline-claim-v1|01HXVECTOR0001|u1vector|q-bend-river-line|1800000000"
         );
+    }
+
+    #[test]
+    fn wire_format_rejects_any_location() {
+        let ok = r#"{"claim":{"v":1,"rideId":"01HXA","questId":"q-bend-river-line","pass":true},"recipient_ua":"u1x"}"#;
+        assert!(serde_json::from_str::<FoglineSubmit>(ok).is_ok());
+
+        for leak in [
+            r#""lat":44.05"#,
+            r#""polyline":"abc""#,
+            r#""questTiles":["fl1:-30067:11400"]"#,
+            r#""tiles":[]"#,
+            r#""accel":[]"#,
+            r#""startedAt":1"#,
+            r#""distanceBand":"lt5""#,
+        ] {
+            let bad = ok.replacen(r#""pass":true"#, &format!(r#""pass":true,{leak}"#), 1);
+            assert!(serde_json::from_str::<FoglineSubmit>(&bad).is_err(), "accepted {leak}");
+        }
+        let nested = ok.replacen(
+            r#""pass":true"#,
+            r#""pass":true,"attestation":{"platform":"ios","token":"t","issuedAt":1,"lat":44}"#,
+            1,
+        );
+        assert!(serde_json::from_str::<FoglineSubmit>(&nested).is_err());
+        let envelope = ok.replacen(r#""recipient_ua":"u1x""#, r#""recipient_ua":"u1x","lon":-121.3"#, 1);
+        assert!(serde_json::from_str::<FoglineSubmit>(&envelope).is_err());
     }
 
     #[test]
@@ -531,25 +453,37 @@ mod tests {
     }
 
     #[test]
-    fn ledger_caps_and_idempotency() {
+    fn ledger_stores_no_location_and_caps_hold() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(
             "CREATE TABLE wallet_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
         )
         .unwrap();
+
+        // The ledger schema itself has nowhere to put a location.
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('fogline_claims')")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        for c in &cols {
+            assert!(!c.contains("tile") && !c.contains("lat") && !c.contains("lon"), "column {c}");
+        }
+
         let now = 1_800_000_000;
         let day = utc_day(now);
-        let tiles = vec!["fl1:1:2".to_string()];
-
-        assert!(insert(&conn, "r1", "u1a", "q", &tiles, "paying", None, now).unwrap());
-        assert!(!insert(&conn, "r1", "u1a", "q", &tiles, "paying", None, now).unwrap());
+        assert!(insert(&conn, "r1", "u1a", "q", "paying", None, now).unwrap());
+        assert!(!insert(&conn, "r1", "u1a", "q", "paying", None, now).unwrap(), "idempotent");
         assert_eq!(paid_today_for(&conn, "u1a", day).unwrap(), 1);
 
-        insert(&conn, "r2", "u1a", "q", &tiles, "incomplete", None, now).unwrap();
-        insert(&conn, "r3", "u1a", "q", &tiles, "failed", None, now).unwrap();
+        insert(&conn, "r2", "u1a", "q", "capped", None, now).unwrap();
+        insert(&conn, "r3", "u1a", "q", "failed", None, now).unwrap();
         assert_eq!(paid_today_for(&conn, "u1a", day).unwrap(), 1, "only paying/paid count");
         assert_eq!(paid_today_for(&conn, "u1a", day + 1).unwrap(), 0);
+        assert_eq!(paid_today_global(&conn, day).unwrap(), 1);
 
         set_status(&conn, "r1", "paid", Some("ab"), Some(PAYOUT_ZAT), None, now).unwrap();
         let row = fetch(&conn, "r1").unwrap().unwrap();

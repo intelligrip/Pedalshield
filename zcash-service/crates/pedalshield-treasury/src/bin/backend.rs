@@ -2779,7 +2779,8 @@ async fn leaderboard_handler(
 // The order of checks is the policy:
 //   1. parse        deny_unknown_fields — a claim carrying location or
 //                   sensor data never reaches step 2 (axum answers 422)
-//   2. evaluate     version, pass bit, tiles ⊆ quest, predicate
+//   2. evaluate     version, pass bit, quest exists. The predicate ran on
+//                   the phone: tiles never reach this server, by design
 //   3. signature    same device key + rollout flag as /claim
 //   4. idempotency  a repeated ride_id returns the existing row
 //   5. caps         1 paid quest / UA / UTC day, 50 / day globally
@@ -2796,7 +2797,7 @@ async fn post_fogline_claim(
     Json(body): Json<fogline::FoglineSubmit>,
 ) -> Result<(StatusCode, Json<fogline::FoglineRow>), AppError> {
     validate_ua(&body.recipient_ua)?;
-    let eligibility = fogline::evaluate(&body.claim).map_err(AppError::BadRequest)?;
+    fogline::evaluate(&body.claim).map_err(AppError::BadRequest)?;
     let ride_id = body.claim.ride_id.clone();
 
     match (&body.rider_id, body.signed_at, &body.signature) {
@@ -2837,39 +2838,32 @@ async fn post_fogline_claim(
             return Ok((StatusCode::OK, Json(existing)));
         }
 
-        let decision = match eligibility {
-            fogline::Eligibility::Incomplete { hit, need } => {
-                ("incomplete", Some(format!("{hit} of {need} quest tiles")))
-            }
-            fogline::Eligibility::Complete => {
-                if fogline::paid_today_for(&conn, &body.recipient_ua, day).map_err(db)?
-                    >= fogline::DAILY_PAID_PER_UA
-                {
-                    ("capped", Some("one paid quest per address per day".into()))
-                } else if fogline::paid_today_global(&conn, day).map_err(db)?
-                    >= fogline::DAILY_PAID_GLOBAL
-                {
-                    ("capped", Some("daily drop budget reached".into()))
-                } else if !state.fogline_payouts
-                    || state.spending_key_path.is_none()
-                    || !fogline::treasury_can_pay(
-                        fogline::known_balance(&conn),
-                        fogline::fee_estimate(&conn),
-                    )
-                {
-                    ("treasury_paused", Some("demo pot is paused or spent".into()))
-                } else {
-                    ("paying", None)
-                }
-            }
-        };
+        let decision: (&str, Option<String>) =
+            if fogline::paid_today_for(&conn, &body.recipient_ua, day).map_err(db)?
+                >= fogline::DAILY_PAID_PER_UA
+            {
+                ("capped", Some("one paid quest per address per day".into()))
+            } else if fogline::paid_today_global(&conn, day).map_err(db)?
+                >= fogline::DAILY_PAID_GLOBAL
+            {
+                ("capped", Some("daily drop budget reached".into()))
+            } else if !state.fogline_payouts
+                || state.spending_key_path.is_none()
+                || !fogline::treasury_can_pay(
+                    fogline::known_balance(&conn),
+                    fogline::fee_estimate(&conn),
+                )
+            {
+                ("treasury_paused", Some("demo pot is paused or spent".into()))
+            } else {
+                ("paying", None)
+            };
 
         fogline::insert(
             &conn,
             &ride_id,
             &body.recipient_ua,
             &body.claim.quest_id,
-            &body.claim.quest_tiles,
             decision.0,
             decision.1.as_deref(),
             now,
