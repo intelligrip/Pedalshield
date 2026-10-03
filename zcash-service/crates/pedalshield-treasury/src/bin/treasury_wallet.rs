@@ -317,7 +317,7 @@ async fn sync_async(
             h.value_zatoshi as f64 / 100_000_000.0,
             h.block_height,
             h.txid_hex,
-            if spent { "spent in range" } else { "unspent (not yet spendable: phase B)" }
+            if spent { "spent in range" } else { "unspent" }
         );
     }
     let anchor_hex: String = tree
