@@ -15,7 +15,8 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import Svg, { G, Polygon, Text as SvgText } from 'react-native-svg';
-import { hexPoints, layoutFog, type HexCell } from '../map/fogLayout.ts';
+import { hexCenter, hexPoints, layoutFog, type HexCell } from '../map/fogLayout.ts';
+import { parseTileId } from '../map/tiles.ts';
 import { fog } from './theme.ts';
 
 const AnimatedG = Animated.createAnimatedComponent(G);
@@ -29,9 +30,11 @@ interface Props {
   size: number;
   /** Show quest stop names. Off for tiny thumbnails. */
   labels?: boolean;
+  /** The cell the rider is in right now (live ride only). Drawn as a ring, never a dot. */
+  current?: string | null;
 }
 
-export function FogMap({ center, radius, unlocked, bloom, questStops, size, labels = true }: Props) {
+export function FogMap({ center, radius, unlocked, bloom, questStops, size, labels = true, current }: Props) {
   const layout = useMemo(
     () => layoutFog({ center, radius, unlocked, bloom, questStops }),
     [center, radius, unlocked, bloom, questStops],
@@ -109,6 +112,19 @@ export function FogMap({ center, radius, unlocked, bloom, questStops, size, labe
             />
           ))}
         </G>
+        {current
+          ? (() => {
+              const a = parseTileId(current);
+              if (!a) return null;
+              const c = hexCenter(a.q, a.r);
+              return (
+                <G>
+                  <Polygon points={hexPoints(c.x, c.y, 1.0)} fill="none" stroke={fog.text} strokeWidth={0.14} />
+                  <Polygon points={hexPoints(c.x, c.y, 0.55)} fill={fog.clear} fillOpacity={0.35} />
+                </G>
+              );
+            })()
+          : null}
         {labels ? (
           <G>
             {layout.cells

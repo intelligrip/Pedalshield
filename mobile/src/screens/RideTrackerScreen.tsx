@@ -12,6 +12,7 @@ import { Button } from '../components/Button.tsx';
 import { Card } from '../components/Card.tsx';
 import { LiveRouteMap } from '../components/LiveRouteMap.tsx';
 import { FoglinePostRide } from '../fogline/FoglinePostRide.tsx';
+import { FoglineRideView } from '../fogline/FoglineRideView.tsx';
 import { IS_FOGLINE } from '../lib/config.ts';
 import { PayoutCard } from '../components/PayoutCard.tsx';
 import { GhostRideSheet } from '../components/GhostRideSheet.tsx';
@@ -202,6 +203,10 @@ export function RideTrackerScreen() {
 
   return (
     <ScreenContainer scroll={false}>
+      {IS_FOGLINE ? (
+        <FoglineRideView snap={snap} />
+      ) : (
+        <>
       <View style={styles.headerRow}>
         <Text style={styles.title}>
           {paused ? 'Paused' : snap.state === 'active' ? 'Riding' : 'Ride'}
@@ -243,6 +248,8 @@ export function RideTrackerScreen() {
           />
         </View>
       </View>
+        </>
+      )}
 
       {snap.state === 'active' && <GpsBanner />}
       {paused && (
@@ -263,14 +270,14 @@ export function RideTrackerScreen() {
           <>
             {/* Coaching that can be READ, shown only while stopped. Sparse by
                 design — null is the common and correct case. */}
-            {(() => {
+            {!IS_FOGLINE && (() => {
               const nudge = preRideNudge(getRides());
               return nudge ? (
                 <Text style={styles.coachNudge}>{nudge}</Text>
               ) : null;
             })()}
             <Button label="Start ride" size="lg" onPress={requestStartRide} />
-            <Pressable
+            {!IS_FOGLINE && <Pressable
               onPress={() => setGhostOpen(true)}
               hitSlop={8}
               style={styles.ghostLink}
@@ -278,7 +285,7 @@ export function RideTrackerScreen() {
               <Text style={styles.ghostLinkText}>
                 🛡 Private-ride checklist ›
               </Text>
-            </Pressable>
+            </Pressable>}
           </>
         )}
         {riding && (

@@ -23,7 +23,10 @@ import { FogMap } from './FogMap.tsx';
 import { fog, mono } from './theme.ts';
 import { getFoglinePot, type FoglinePot } from './api.ts';
 import { activeQuest } from '../map/quests.ts';
-import { centroidTile, tileDistance } from '../map/tiles.ts';
+import { centroidTile, tileDistance, tileIdFor } from '../map/tiles.ts';
+
+/** A neutral cell to frame an empty field around: abstract fog, no place. */
+const NOWHERE = tileIdFor(0, 0);
 import { clearAtlas, loadAtlas, onAtlasChange, type Atlas } from '../map/atlas.ts';
 import {
   CHAPTERS,
@@ -47,7 +50,8 @@ export function FogScreen() {
   const nav: any = useNavigation();
   const quest = activeQuest();
   const [atlas, setAtlas] = useState<Atlas>({ v: 1, tiles: [], rides: 0 });
-  const [view, setView] = useState<View_>('quest');
+  // Opens on YOUR fog, wherever you are. The Bend quest is opt-in.
+  const [view, setView] = useState<View_>('mine');
   const [pot, setPot] = useState<FoglinePot | null>(null);
   const [ua, setUa] = useState(getConnectedUA());
 
@@ -74,7 +78,10 @@ export function FogScreen() {
     return { center: c, radius: r };
   }, [atlas.tiles]);
 
-  const frame = view === 'mine' && mine ? mine : { center: questCenter, radius: 9 };
+  const frame =
+    view === 'quest'
+      ? { center: questCenter, radius: 9 }
+      : mine ?? { center: NOWHERE, radius: 6 };
   const size = Math.min(Dimensions.get('window').width - 32, 420);
   const clearedStops = quest.stops.filter((s) => unlocked.has(s.tile)).length;
 
@@ -88,18 +95,16 @@ export function FogScreen() {
           center={frame.center}
           radius={frame.radius}
           unlocked={unlocked}
-          questStops={quest.stops}
+          questStops={view === 'quest' ? quest.stops : undefined}
           size={size}
         />
+        {view === 'mine' && !mine ? (
+          <Text style={styles.small}>Nothing cleared yet. Ride anywhere and the fog opens around you.</Text>
+        ) : null}
 
         <View style={styles.toggleRow}>
-          <Toggle label="Quest" active={view === 'quest'} onPress={() => setView('quest')} />
-          <Toggle
-            label="My fog"
-            active={view === 'mine'}
-            disabled={!mine}
-            onPress={() => setView('mine')}
-          />
+          <Toggle label="My fog" active={view === 'mine'} onPress={() => setView('mine')} />
+          <Toggle label="Bend bonus" active={view === 'quest'} onPress={() => setView('quest')} />
           <Text style={styles.count}>
             {atlas.tiles.length} {atlas.tiles.length === 1 ? 'cell' : 'cells'} cleared
           </Text>
@@ -109,7 +114,7 @@ export function FogScreen() {
 
         {/* The public bonus quest (Bend). */}
         <View style={styles.card}>
-          <Text style={styles.kicker}>QUEST</Text>
+          <Text style={styles.kicker}>BONUS QUEST · BEND, OREGON</Text>
           <Text style={styles.questTitle}>{quest.title}</Text>
           <Text style={styles.body}>{quest.blurb}</Text>
           <View style={styles.stops}>
