@@ -493,6 +493,10 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
 
     // Fogline ledger (additive, idempotent).
     conn.execute_batch(pedalshield_treasury::fogline::SCHEMA)?;
+    // Upgrade a table created by an earlier build: add `chapter`, drop the
+    // old `quest_tiles` column. Fails startup loudly rather than running a
+    // server whose every Fogline insert would error.
+    pedalshield_treasury::fogline::migrate(&conn)?;
     // Same crash-recovery reasoning as above. A Fogline drop abandoned
     // mid-payout is marked failed rather than retried: it stops counting
     // against the rider's daily cap, so their next quest ride can pay.

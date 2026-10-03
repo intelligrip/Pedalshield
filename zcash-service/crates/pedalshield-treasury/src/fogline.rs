@@ -430,6 +430,33 @@ pub fn set_status(
     Ok(())
 }
 
+/// Bring an existing `fogline_claims` table up to the current schema.
+///
+/// `CREATE TABLE IF NOT EXISTS` never alters a table that already exists, so
+/// a database created by an earlier build keeps its old columns. Two fixes:
+///   - add `chapter` (letter chain), without which every insert fails;
+///   - DROP `quest_tiles` if present. Early builds stored the ride's quest
+///     tiles there. Claims no longer carry tiles, and no column that ever
+///     held location data may survive on the server.
+/// Idempotent; a no-op on a fresh database. Run after `SCHEMA`.
+pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    let cols: Vec<String> = {
+        let mut st = conn.prepare("SELECT name FROM pragma_table_info('fogline_claims')")?;
+        let it = st.query_map([], |r| r.get::<_, String>(0))?;
+        it.collect::<rusqlite::Result<_>>()?
+    };
+    if cols.is_empty() {
+        return Ok(());
+    }
+    if !cols.iter().any(|c| c == "chapter") {
+        conn.execute("ALTER TABLE fogline_claims ADD COLUMN chapter INTEGER", [])?;
+    }
+    if cols.iter().any(|c| c == "quest_tiles") {
+        conn.execute("ALTER TABLE fogline_claims DROP COLUMN quest_tiles", [])?;
+    }
+    Ok(())
+}
+
 /// The chapter this address plays next (0 if it has never claimed).
 pub fn chain_position(conn: &Connection, ua: &str) -> rusqlite::Result<usize> {
     let v: Option<i64> = conn
@@ -821,5 +848,48 @@ mod tests {
         let s2 = code_secret(&conn, now).unwrap();
         assert_eq!(s1, s2);
         assert_ne!(s1, [0u8; 32]);
+    }
+
+    #[test]
+    fn migrate_upgrades_an_old_table_and_drops_tile_data() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The shape an early build created: quest_tiles NOT NULL, no chapter.
+        conn.execute_batch(
+            "CREATE TABLE fogline_claims (
+                ride_id TEXT PRIMARY KEY, recipient_ua TEXT NOT NULL, quest_id TEXT NOT NULL,
+                quest_tiles TEXT NOT NULL, status TEXT NOT NULL, payout_zat INTEGER,
+                payout_txid TEXT, reason TEXT, utc_day INTEGER NOT NULL,
+                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+             INSERT INTO fogline_claims VALUES
+                ('old', 'u1a', 'q', 'fl1:1:2', 'paid', 10001, 'ab', NULL, 1, 1, 1);
+             CREATE TABLE wallet_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+        )
+        .unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap(); // idempotent
+
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('fogline_claims')")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(cols.iter().any(|c| c == "chapter"));
+        assert!(!cols.iter().any(|c| c.contains("tile")), "tile data survived: {cols:?}");
+
+        // Old rows survive; new inserts and recovery work.
+        assert_eq!(fetch(&conn, "old").unwrap().unwrap().status, "paid");
+        assert!(insert(&conn, "new", "u1b", "ch-1", Some(0), "paying", None, 1_800_000_000).unwrap());
+        assert_eq!(recover_abandoned(&conn, 1_800_000_000).unwrap(), 1);
+    }
+
+    #[test]
+    fn migrate_is_a_noop_on_a_fresh_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        migrate(&conn).unwrap();
     }
 }
