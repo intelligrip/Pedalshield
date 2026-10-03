@@ -64,7 +64,40 @@ export const QUEST_DATA = {
           "label": "First Street Rapids",
           "tile": "fl1:-30071:11410"
         }
-      ]
+      ],
+      "letter": "FOGLINE · THE RIVER LINE\nYou followed the water through the fog. The river keeps no record of who passes. Neither do we."
+    }
+  ],
+  "chapters": [
+    {
+      "id": "ch-1",
+      "title": "First Light",
+      "brief": "Clear 3 cells you have never touched, in one ride.",
+      "rule": {
+        "kind": "newCells",
+        "n": 3
+      },
+      "letter": "FOGLINE · LETTER 1\nYou rode into the fog and it gave way. Few do. The city keeps its own map, and now it has noticed you.\nThe edges are thinner than they look. Go past them."
+    },
+    {
+      "id": "ch-2",
+      "title": "The Frontier",
+      "brief": "In one ride, reach a new cell at least 3 cells beyond everything you have cleared.",
+      "rule": {
+        "kind": "frontier",
+        "n": 3
+      },
+      "letter": "FOGLINE · LETTER 2\nYou went further than the map expected. Out there the fog remembers nothing — not your name, not your road. Keep it that way.\nOne more push. Go where it is darkest."
+    },
+    {
+      "id": "ch-3",
+      "title": "Into the Dark",
+      "brief": "Clear 8 new cells in one ride.",
+      "rule": {
+        "kind": "newCells",
+        "n": 8
+      },
+      "letter": "FOGLINE · LETTER 3\nYou cleared the line. No one knows the way you came, and no one ever will. The dark map is yours.\nThank you for riding. — the Fog"
     }
   ]
 } as const;
