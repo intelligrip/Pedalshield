@@ -32,8 +32,10 @@ use serde::Deserialize;
 pub const DUST_FLOOR_ZAT: u64 = 10_000;
 /// The drop: bare-minimum spendable note, plus one zatoshi.
 pub const PAYOUT_ZAT: u64 = DUST_FLOOR_ZAT + 1;
-/// Held back so fees can never strand the last notes in the pot.
-pub const FEE_RESERVE_ZAT: u64 = 2_000_000;
+/// Held back so fees can never strand the last notes in the pot. Sized for
+/// the live 0.03 ZEC pot: 500,000 zat covers 50 Ironwood-only spends at the
+/// measured 10,000 zat fee (25 at the conservative 20,000 default).
+pub const FEE_RESERVE_ZAT: u64 = 500_000;
 /// Fee assumed until a real payout tells us otherwise. Observed on mainnet
 /// for this treasury's 1-in/1-out Orchard spend: 20,000 zat (not 10,000).
 pub const DEFAULT_FEE_ESTIMATE_ZAT: u64 = 20_000;
@@ -593,7 +595,8 @@ mod tests {
     #[test]
     fn payout_constants_are_consistent() {
         assert_eq!(PAYOUT_ZAT, DUST_FLOOR_ZAT + 1);
-        assert!(FEE_RESERVE_ZAT > 50 * DEFAULT_FEE_ESTIMATE_ZAT);
+        // The reserve must cover at least 25 spends at the conservative fee.
+        assert!(FEE_RESERVE_ZAT >= 25 * DEFAULT_FEE_ESTIMATE_ZAT);
     }
 
     #[test]

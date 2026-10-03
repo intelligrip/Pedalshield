@@ -128,15 +128,15 @@ export function FogScreen() {
           </Text>
           <View style={styles.rule} />
           <Text style={styles.small}>
-            Quest drop from a 0.1 ZEC demo pot. Minimum spendable note + 1 zatoshi.
+            Letters come from a small ZEC demo pot. Each one is the minimum spendable note + 1 zatoshi.
           </Text>
           {pot ? (
             <Text style={[styles.small, pot.paused && { color: fog.danger }]}>
               {pot.paused
-                ? 'Pot is paused — the fog still clears.'
+                ? 'The pot is paused. The fog still clears.'
                 : pot.drops_remaining !== null
-                  ? `About ${pot.drops_remaining} drops left.`
-                  : 'Pot is live.'}
+                  ? `About ${pot.drops_remaining} letters left in the pot.`
+                  : 'The pot is live.'}
             </Text>
           ) : null}
         </View>
