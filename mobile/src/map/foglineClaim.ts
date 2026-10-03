@@ -7,6 +7,7 @@
  * device, full stop.
  *
  *   The claim carries:  claim version, opaque ride id, quest id, pass bit,
+ *                       the code from the previous letter (letter chain),
  *                       and the attestation token the app already sends.
  *   It never carries:   lat/lon, polylines, any sensor stream, place names,
  *                       endpoints, ride timestamps, distance, engine flags,
@@ -51,12 +52,15 @@ export interface FoglineClaim {
   questId: string;
   /** Only a verified ride that completed the quest produces a claim. */
   pass: true;
+  /** Code from the previous chapter's letter (chapters 2+). Not location. */
+  code?: string;
   attestation?: AttestationToken;
 }
 
 /** Exact top-level keys a Fogline claim may contain. */
 export const FOGLINE_CLAIM_KEYS: readonly string[] = [
   'attestation',
+  'code',
   'pass',
   'questId',
   'rideId',
@@ -84,6 +88,9 @@ export const FORBIDDEN_KEYS: readonly string[] = [
 
 /** Something shaped like a decimal-degree coordinate. */
 const COORDINATE_PATTERN = /-?\d{1,3}\.\d{4,}/;
+/** Letter-chain code — mirrors CODE_PATTERN in chapters.ts and is_code in Rust. */
+const CODE_FORMAT = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
+
 /** Something shaped like a Fogline tile id. */
 const TILE_PATTERN = /fl\d+:-?\d+:-?\d+/;
 
@@ -109,6 +116,9 @@ export function assertFoglineClaimSafe(claim: unknown): asserts claim is Fogline
   if (c.pass !== true) throw new Error('fogline claim: pass must be true');
   if (typeof c.rideId !== 'string' || !c.rideId) throw new Error('fogline claim: rideId');
   if (typeof c.questId !== 'string' || !c.questId) throw new Error('fogline claim: questId');
+  if (c.code !== undefined && (typeof c.code !== 'string' || !CODE_FORMAT.test(c.code))) {
+    throw new Error('fogline claim: code is malformed');
+  }
   if (c.attestation !== undefined) {
     const a = c.attestation as Record<string, unknown>;
     for (const k of Object.keys(a ?? {})) {
@@ -205,4 +215,37 @@ export function foglineSigningMessage(
   signedAt: number,
 ): string {
   return ['fogline-claim-v1', claim.rideId, recipientUa, claim.questId, String(signedAt)].join('|');
+}
+
+/**
+ * Claim for a letter-chain chapter. The chapter's rule is location-free and
+ * has already been evaluated on the phone (chapters.ts); this only packages
+ * the result. `code` is the one from the previous letter, absent for the
+ * first chapter.
+ */
+export function buildChapterClaim(
+  result: RideVerificationResult,
+  chapterId: string,
+  code: string | null,
+  attestation?: AttestationToken,
+): FoglineClaim | null {
+  if (result.status !== 'verified') return null;
+  const claim: FoglineClaim = {
+    v: 1,
+    rideId: result.rideId,
+    questId: chapterId,
+    pass: true,
+    ...(code ? { code } : {}),
+    ...(attestation
+      ? {
+          attestation: {
+            platform: attestation.platform,
+            token: attestation.token,
+            issuedAt: attestation.issuedAt,
+          },
+        }
+      : {}),
+  };
+  assertFoglineClaimSafe(claim);
+  return claim;
 }

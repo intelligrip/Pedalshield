@@ -26,6 +26,15 @@ import { activeQuest } from '../map/quests.ts';
 import { centroidTile, tileDistance } from '../map/tiles.ts';
 import { clearAtlas, loadAtlas, onAtlasChange, type Atlas } from '../map/atlas.ts';
 import {
+  CHAPTERS,
+  isFinished,
+  loadChain,
+  onChainChange,
+  saveChain,
+  withCode,
+  type ChainState,
+} from '../map/chapters.ts';
+import {
   getConnectedUA,
   onConnectedUAChange,
   setConnectedUA,
@@ -96,7 +105,9 @@ export function FogScreen() {
           </Text>
         </View>
 
-        {/* The one quest. */}
+        <ChapterCard />
+
+        {/* The public bonus quest (Bend). */}
         <View style={styles.card}>
           <Text style={styles.kicker}>QUEST</Text>
           <Text style={styles.questTitle}>{quest.title}</Text>
@@ -182,6 +193,89 @@ function Toggle({
 }
 
 /** Paste an existing Unified Address. We never create or hold keys. */
+/**
+ * The letter chain. Chapters are played in order; from chapter 2 on, the
+ * rider types the code from the previous letter, which only their own
+ * wallet can decrypt. The app never reads the wallet.
+ */
+function ChapterCard() {
+  const [chain, setChain] = useState<ChainState | null>(null);
+  const [draft, setDraft] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    void loadChain();
+    return onChainChange(setChain);
+  }, []);
+
+  if (!chain) return null;
+
+  if (isFinished(chain)) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.kicker}>THE LINE</Text>
+        <Text style={styles.questTitle}>Cleared</Text>
+        <Text style={styles.body}>
+          All {CHAPTERS.length} letters found. No one knows the way you came. The fog keeps clearing as you ride.
+        </Text>
+      </View>
+    );
+  }
+
+  const ch = CHAPTERS[chain.chapter];
+  const submit = async () => {
+    const next = withCode(chain, draft);
+    if (!next) {
+      setErr('Codes look like ABCD-EFGH — check the memo in your wallet.');
+      return;
+    }
+    setErr('');
+    setDraft('');
+    await saveChain(next);
+  };
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.kicker}>
+        CHAPTER {chain.chapter + 1} OF {CHAPTERS.length}
+      </Text>
+      <Text style={styles.questTitle}>{ch.title}</Text>
+      {chain.awaitingCode ? (
+        <>
+          <Text style={styles.body}>
+            A letter is in your wallet. Open it in Zashi or Zodl, find the code in the memo, and enter it here
+            to begin.
+          </Text>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="ABCD-EFGH"
+            placeholderTextColor={fog.muted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            style={styles.input}
+            onSubmitEditing={() => void submit()}
+          />
+          {draft ? (
+            <Pressable onPress={() => void submit()}>
+              <Text style={styles.link}>Open chapter</Text>
+            </Pressable>
+          ) : null}
+          {err ? <Text style={[styles.small, { color: fog.danger }]}>{err}</Text> : null}
+        </>
+      ) : (
+        <>
+          <Text style={styles.body}>{ch.brief}</Text>
+          <Text style={styles.small}>
+            Finish it in one ride and a letter arrives in your wallet: the next chapter, written in a shielded
+            memo only you can read.
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
 function WalletCard({ ua }: { ua: string }) {
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState('');

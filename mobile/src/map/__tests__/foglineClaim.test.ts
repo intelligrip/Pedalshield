@@ -11,6 +11,7 @@ import {
   FOGLINE_CLAIM_KEYS,
   FORBIDDEN_KEYS,
   assertFoglineClaimSafe,
+  buildChapterClaim,
   buildFoglineClaim,
   foglineSigningMessage,
   questTilesHit,
@@ -69,8 +70,8 @@ describe('fogline claim — shape', () => {
   });
 
   it('contains exactly the allowed keys', () => {
-    assert.deepEqual(Object.keys(claim).sort(), [...FOGLINE_CLAIM_KEYS].sort());
-    assert.deepEqual([...FOGLINE_CLAIM_KEYS].sort(), ['attestation', 'pass', 'questId', 'rideId', 'v']);
+    assert.deepEqual(Object.keys(claim).sort(), FOGLINE_CLAIM_KEYS.filter((k) => k !== 'code').sort());
+    assert.deepEqual([...FOGLINE_CLAIM_KEYS].sort(), ['attestation', 'code', 'pass', 'questId', 'rideId', 'v']);
   });
 
   it('omits attestation cleanly when there is none', () => {
@@ -176,5 +177,25 @@ describe('signing message (cross-language protocol)', () => {
       1800000000,
     );
     assert.equal(msg, 'fogline-claim-v1|01HXVECTOR0001|u1vector|q-bend-river-line|1800000000');
+  });
+});
+
+describe('chapter claims', () => {
+  it('carry the code and nothing locational', () => {
+    const c = buildChapterClaim(verified(), 'ch-2', 'ABCD-EFGH', ATTEST)!;
+    assert.deepEqual(Object.keys(c).sort(), ['attestation', 'code', 'pass', 'questId', 'rideId', 'v']);
+    assert.equal(c.code, 'ABCD-EFGH');
+    assert.equal(/fl\d+:-?\d+:-?\d+/.test(JSON.stringify(c)), false);
+  });
+
+  it('omit the code for the first chapter', () => {
+    const c = buildChapterClaim(verified(), 'ch-1', null)!;
+    assert.equal('code' in c, false);
+  });
+
+  it('refuse unverified rides and malformed codes', () => {
+    assert.equal(buildChapterClaim(verified({ status: 'rejected' }), 'ch-1', null), null);
+    assert.throws(() => buildChapterClaim(verified(), 'ch-2', '44.0581-121'));
+    assert.throws(() => buildChapterClaim(verified(), 'ch-2', 'abcd-efgh'));
   });
 });

@@ -37,7 +37,19 @@ import {
 import { tilesForRide, centroidTile, tileDistance } from '../map/tiles.ts';
 import { getAtlas, recordRideTiles } from '../map/atlas.ts';
 import { activeQuest, questProgress } from '../map/quests.ts';
-import { buildFoglineClaim } from '../map/foglineClaim.ts';
+import { buildChapterClaim, buildFoglineClaim, type FoglineClaim } from '../map/foglineClaim.ts';
+import {
+  CHAPTERS,
+  START,
+  afterLetter,
+  codeRejected,
+  evaluateRule,
+  isFinished,
+  loadChain,
+  saveChain,
+  type ChainState,
+  type RuleResult,
+} from '../map/chapters.ts';
 import { getConnectedUA } from '../wallet/connectedWallet.ts';
 import { signFoglineClaim } from '../wallet/deviceIdentity.ts';
 import { EXPLORER_TX_BASE } from '../lib/config.ts';
@@ -69,6 +81,12 @@ export function FoglinePostRide({
   const [unlocked, setUnlocked] = useState<Set<string>>(new Set(getAtlas().tiles));
   const [drop, setDrop] = useState<Drop>({ kind: 'none', why: '' });
   const [sentBody, setSentBody] = useState<string | null>(null);
+  const [chapterView, setChapterView] = useState<
+    { title: string; index: number; rule: RuleResult | null; awaitingCode: boolean; finished: boolean } | null
+  >(null);
+  // The atlas as it stood BEFORE this ride — chapter rules count "new" cells
+  // against it. Captured on first render, before the merge below runs.
+  const atlasBefore = useMemo(() => getAtlas().tiles, []);
   const ran = useRef(false);
 
   useEffect(() => {
@@ -84,24 +102,44 @@ export function FoglinePostRide({
       });
     }
 
-    const claim = buildFoglineClaim(result, rideTiles, quest, rawRide?.deviceAttestation);
-    if (!claim) {
-      setDrop({
-        kind: 'none',
-        why: !verified
-          ? 'Ride not verified — no claim sent.'
-          : `${progress.hit.length} of ${progress.need} quest cells this ride — no claim sent.`,
-      });
-      return;
-    }
-    const ua = getConnectedUA();
-    if (!ua) {
-      setDrop({ kind: 'none', why: 'Quest complete — add a drop address on the Fog tab to claim next time.' });
-      return;
-    }
-
-    setDrop({ kind: 'sending' });
     void (async () => {
+      const chain: ChainState = await loadChain();
+      const finished = isFinished(chain);
+      const chapter = finished ? null : CHAPTERS[chain.chapter];
+      // A chapter can only be played once its code is in (chapter 1 needs none).
+      const playable = !!chapter && !chain.awaitingCode;
+      const rule = playable && chapter ? evaluateRule(chapter.rule, rideTiles, atlasBefore) : null;
+      setChapterView(
+        chapter
+          ? { title: chapter.title, index: chain.chapter, rule, awaitingCode: chain.awaitingCode, finished }
+          : finished
+            ? { title: '', index: chain.chapter, rule: null, awaitingCode: false, finished: true }
+            : null,
+      );
+
+      // One claim per ride: the chapter if it is done, else the River Line.
+      let claim: FoglineClaim | null = null;
+      let chapterIndex: number | null = null;
+      if (verified && chapter && rule?.done) {
+        claim = buildChapterClaim(result, chapter.id, chain.code, rawRide?.deviceAttestation);
+        chapterIndex = chain.chapter;
+      }
+      if (!claim) claim = buildFoglineClaim(result, rideTiles, quest, rawRide?.deviceAttestation);
+
+      if (!claim) {
+        setDrop({
+          kind: 'none',
+          why: !verified ? 'Ride not verified — no claim sent.' : 'No quest or chapter finished this ride — nothing sent.',
+        });
+        return;
+      }
+      const ua = getConnectedUA();
+      if (!ua) {
+        setDrop({ kind: 'none', why: 'Quest complete — add a drop address on the Fog tab to claim next time.' });
+        return;
+      }
+
+      setDrop({ kind: 'sending' });
       try {
         const signed = await signFoglineClaim(claim, ua);
         const sub: FoglineSubmission = {
@@ -114,9 +152,26 @@ export function FoglinePostRide({
         setSentBody(submissionBody(sub));
         let row = await submitFoglineClaim(sub);
         if (row.status === 'paying') row = await pollFoglineClaim(claim.rideId);
+        if (chapterIndex !== null && row.status === 'paid') {
+          await saveChain(afterLetter(chain, chapterIndex));
+        }
         setDrop({ kind: 'row', row });
       } catch (e) {
-        setDrop({ kind: 'error', message: String((e as Error)?.message ?? e) });
+        const message = String((e as Error)?.message ?? e);
+        if (message.includes('code_mismatch')) {
+          await saveChain(codeRejected(chain));
+          setDrop({ kind: 'error', message: 'That code doesn’t match your last letter. Check the memo and enter it again on the Fog tab.' });
+          return;
+        }
+        const m = /chapter_mismatch: this address is on chapter (\d+)/.exec(message);
+        if (m) {
+          // The server is the authority on position: resync to it.
+          const at = Math.max(0, Number(m[1]) - 1);
+          await saveChain({ ...START, chapter: at, awaitingCode: at > 0 });
+          setDrop({ kind: 'error', message: `This address is on chapter ${m[1]}. Your chapter has been updated.` });
+          return;
+        }
+        setDrop({ kind: 'error', message });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,9 +218,20 @@ export function FoglinePostRide({
         ) : null}
 
         <View style={styles.card}>
+          {chapterView ? (
+            <>
+              <Text style={styles.kicker}>
+                {chapterView.finished
+                  ? 'THE LINE'
+                  : `CHAPTER ${chapterView.index + 1} · ${chapterView.title.toUpperCase()}`}
+              </Text>
+              <Text style={styles.questLine}>{chapterLine(chapterView)}</Text>
+              <View style={styles.rule} />
+            </>
+          ) : null}
           <Text style={styles.kicker}>{quest.title.toUpperCase()}</Text>
-          <Text style={styles.questLine}>
-            {progress.hit.length} of {progress.need} quest cells this ride
+          <Text style={styles.small}>
+            {progress.hit.length} of {progress.need} river cells this ride
             {progress.complete ? ' — complete' : ''}
           </Text>
           <DropView drop={drop} />
@@ -193,6 +259,22 @@ export function FoglinePostRide({
   );
 }
 
+function chapterLine(v: {
+  index: number;
+  rule: RuleResult | null;
+  awaitingCode: boolean;
+  finished: boolean;
+}): string {
+  if (v.finished) return 'You cleared the line. The fog is yours.';
+  if (v.awaitingCode) return 'Enter the code from your last letter on the Fog tab to play this chapter.';
+  if (!v.rule) return '';
+  if (v.rule.done) return 'Chapter complete — a letter is on its way to your wallet.';
+  const kind = CHAPTERS[v.index]?.rule.kind;
+  return kind === 'frontier'
+    ? `Reached ${v.rule.have} of ${v.rule.need} cells past your frontier`
+    : `${v.rule.have} of ${v.rule.need} new cells this ride`;
+}
+
 function DropView({ drop }: { drop: Drop }) {
   if (drop.kind === 'none') return <Text style={styles.small}>{drop.why}</Text>;
   if (drop.kind === 'sending') {
@@ -212,7 +294,7 @@ function DropView({ drop }: { drop: Drop }) {
       return (
         <View style={{ gap: 6 }}>
           <Text style={styles.paid}>
-            Drop sent · {(row.payout_zat ?? 0).toLocaleString()} zatoshi, shielded
+            Letter sent · {(row.payout_zat ?? 0).toLocaleString()} zatoshi, shielded. Open your wallet to read it.
           </Text>
           {row.payout_txid ? (
             <Pressable onPress={() => Linking.openURL(`${EXPLORER_TX_BASE}${row.payout_txid}`)}>
@@ -271,6 +353,7 @@ const styles = StyleSheet.create({
   body: { color: fog.text, fontSize: 14, lineHeight: 20, opacity: 0.85 },
   small: { color: fog.dim, fontSize: 12, lineHeight: 17, textAlign: 'left' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rule: { height: 1, backgroundColor: fog.line, marginVertical: 6 },
   paid: { color: fog.quest, fontSize: 15, fontWeight: '700' },
   txid: { color: fog.text, fontFamily: mono, fontSize: 11 },
   link: { color: fog.clear, fontSize: 13, fontWeight: '600', marginTop: 4 },
