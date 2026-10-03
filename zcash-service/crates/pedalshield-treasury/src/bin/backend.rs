@@ -496,12 +496,13 @@ fn open_db(path: &PathBuf) -> Result<Connection, rusqlite::Error> {
     // Same crash-recovery reasoning as above. A Fogline drop abandoned
     // mid-payout is marked failed rather than retried: it stops counting
     // against the rider's daily cap, so their next quest ride can pay.
-    let _ = conn.execute(
-        "UPDATE fogline_claims SET status = 'failed', updated_at = ?1,
-             reason = 'auto-recovered: payout abandoned at restart'
-         WHERE status = 'paying'",
-        params![now_secs() as i64],
-    );
+    // Also returns any letter-chain reservation, so a rider is never left
+    // waiting for a letter that will not come.
+    match pedalshield_treasury::fogline::recover_abandoned(&conn, now_secs()) {
+        Ok(0) => {}
+        Ok(n) => tracing::warn!(recovered = n, "fogline startup recovery: abandoned drops failed + chain rolled back"),
+        Err(e) => tracing::error!(error = %e, "fogline startup recovery failed"),
+    }
 
     Ok(conn)
 }
@@ -2797,7 +2798,7 @@ async fn post_fogline_claim(
     Json(body): Json<fogline::FoglineSubmit>,
 ) -> Result<(StatusCode, Json<fogline::FoglineRow>), AppError> {
     validate_ua(&body.recipient_ua)?;
-    fogline::evaluate(&body.claim).map_err(AppError::BadRequest)?;
+    let target = fogline::evaluate(&body.claim).map_err(AppError::BadRequest)?;
     let ride_id = body.claim.ride_id.clone();
 
     match (&body.rider_id, body.signed_at, &body.signature) {
@@ -2830,13 +2831,33 @@ async fn post_fogline_claim(
 
     let now = now_secs();
     let day = fogline::utc_day(now);
-    let (status, reason): (&str, Option<String>) = {
+    let (status, reason, memo, chapter): (&str, Option<String>, String, Option<usize>) = {
         let conn = state.db.lock().unwrap();
         let db = |e: rusqlite::Error| AppError::Internal(format!("db: {e}"));
 
         if let Some(existing) = fogline::fetch(&conn, &ride_id).map_err(db)? {
             return Ok((StatusCode::OK, Json(existing)));
         }
+
+        // Letter chain: right chapter, right code. Checked under the same
+        // lock as the caps and the reservation below, so two claims cannot
+        // both take the same chapter.
+        let chapter = match target {
+            fogline::Target::Chapter(i) => Some(i),
+            fogline::Target::Quest(_) => None,
+        };
+        let secret = fogline::code_secret(&conn, now).map_err(db)?;
+        let mut next_code: Option<String> = None;
+        if let Some(i) = chapter {
+            let position = fogline::chain_position(&conn, &body.recipient_ua).map_err(db)?;
+            let expected = (position > 0).then(|| fogline::mint_code(&secret, &body.recipient_ua, position));
+            fogline::check_chain(position, i, body.claim.code.as_deref(), expected.as_deref())
+                .map_err(AppError::BadRequest)?;
+            if i + 1 < fogline::chapters().len() {
+                next_code = Some(fogline::mint_code(&secret, &body.recipient_ua, i + 1));
+            }
+        }
+        let memo = fogline::letter_memo(target, next_code.as_deref());
 
         let decision: (&str, Option<String>) =
             if fogline::paid_today_for(&conn, &body.recipient_ua, day).map_err(db)?
@@ -2864,19 +2885,27 @@ async fn post_fogline_claim(
             &ride_id,
             &body.recipient_ua,
             &body.claim.quest_id,
+            chapter,
             decision.0,
             decision.1.as_deref(),
             now,
         )
         .map_err(db)?;
-        decision
+        // Reserve the next chapter while the letter pays; rolled back if it
+        // fails or pauses. A capped/paused claim never advances the chain.
+        if decision.0 == "paying" {
+            if let Some(i) = chapter {
+                fogline::set_chain_position(&conn, &body.recipient_ua, i + 1, now).map_err(db)?;
+            }
+        }
+        (decision.0, decision.1, memo, chapter)
     };
 
     if status == "paying" {
         let st = state.clone();
         let ua = body.recipient_ua.clone();
         let id = ride_id.clone();
-        tokio::spawn(async move { run_fogline_payout(st, id, ua).await });
+        tokio::spawn(async move { run_fogline_payout(st, id, ua, memo, chapter).await });
     }
 
     tracing::info!(%ride_id, status, "fogline claim accepted");
@@ -2892,11 +2921,21 @@ async fn post_fogline_claim(
     ))
 }
 
-async fn run_fogline_payout(state: AppState, ride_id: String, ua: String) {
+async fn run_fogline_payout(
+    state: AppState,
+    ride_id: String,
+    ua: String,
+    memo: String,
+    chapter: Option<usize>,
+) {
     let fail = |state: &AppState, why: String| {
         tracing::warn!(%ride_id, %why, "fogline payout failed");
+        let now = now_secs();
         let conn = state.db.lock().unwrap();
-        let _ = fogline::set_status(&conn, &ride_id, "failed", None, None, Some(&why), now_secs());
+        let _ = fogline::set_status(&conn, &ride_id, "failed", None, None, Some(&why), now);
+        if let Some(c) = chapter {
+            let _ = fogline::rollback_chain(&conn, &ua, c, now);
+        }
     };
 
     let sk = match load_spending_key(&state) {
@@ -2926,10 +2965,15 @@ async fn run_fogline_payout(state: AppState, ride_id: String, ua: String) {
             Some("demo pot reached its reserve"),
             now_secs(),
         );
+        if let Some(c) = chapter {
+            let _ = fogline::rollback_chain(&conn, &ua, c, now_secs());
+        }
         return;
     }
 
-    let result = pedalshield_treasury::spend::spender::pay(
+    // The letter rides in the recipient output's encrypted memo: only the
+    // rider's wallet can read it.
+    let result = pedalshield_treasury::spend::spender::pay_with_memo(
         &state.lightwalletd,
         &sk,
         &ua,
@@ -2937,6 +2981,7 @@ async fn run_fogline_payout(state: AppState, ride_id: String, ua: String) {
         state.birthday,
         scan_from,
         true,
+        Some(&memo),
     )
     .await
     .map_err(|e| e.to_string());

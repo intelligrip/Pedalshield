@@ -53,16 +53,31 @@ const QUESTS_JSON: &str = include_str!("../../../../mobile/src/map/quests.json")
 #[derive(Debug, Deserialize)]
 struct QuestFile {
     quests: Vec<QuestDef>,
+    #[serde(default)]
+    chapters: Vec<ChapterDef>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct QuestDef {
     pub id: String,
     pub need: usize,
     pub stops: Vec<QuestStop>,
+    /// Memo text delivered with this quest's drop.
+    #[serde(default)]
+    pub letter: String,
 }
 
+/// A chapter of the letter chain. Its rule is evaluated on the phone (it is
+/// location-free, so there is nothing for the server to re-check); the
+/// server owns the ORDER, the per-address codes, and the letters.
 #[derive(Debug, Clone, Deserialize)]
+pub struct ChapterDef {
+    pub id: String,
+    pub title: String,
+    pub letter: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct QuestStop {
     pub label: String,
     pub tile: String,
@@ -81,6 +96,20 @@ pub fn quests() -> &'static [QuestDef] {
 
 pub fn quest(id: &str) -> Option<&'static QuestDef> {
     quests().iter().find(|q| q.id == id)
+}
+
+/// All chapters, in order.
+pub fn chapters() -> &'static [ChapterDef] {
+    static C: OnceLock<Vec<ChapterDef>> = OnceLock::new();
+    C.get_or_init(|| {
+        serde_json::from_str::<QuestFile>(QUESTS_JSON)
+            .expect("mobile/src/map/quests.json is malformed")
+            .chapters
+    })
+}
+
+pub fn chapter_index(id: &str) -> Option<usize> {
+    chapters().iter().position(|c| c.id == id)
 }
 
 /// A canonical Fogline v1 tile id: `fl1:<q>:<r>` with plain integers. The
@@ -120,6 +149,8 @@ pub struct FoglineClaim {
     #[serde(rename = "questId")]
     pub quest_id: String,
     pub pass: bool,
+    /// Code from the previous chapter's letter. Required from chapter 2 on.
+    pub code: Option<String>,
     pub attestation: Option<Attestation>,
 }
 
@@ -145,11 +176,21 @@ pub fn signing_message(c: &FoglineClaim, recipient_ua: &str, signed_at: u64) -> 
     )
 }
 
-/// Structural validation. `Err` is a 400. The quest predicate itself is
-/// evaluated on the phone — the server never receives the tiles it would
-/// need to re-check it, by design. What the server can and does check: the
-/// claim is well-formed, the ride verified, and the quest exists.
-pub fn evaluate(c: &FoglineClaim) -> Result<&'static QuestDef, String> {
+/// What a claim is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// A public, place-based quest (the River Line).
+    Quest(&'static QuestDef),
+    /// Chapter `n` (0-based) of the letter chain.
+    Chapter(usize),
+}
+
+/// Structural validation. `Err` is a 400. Quest and chapter rules are
+/// evaluated on the phone; the server never receives the tiles it would
+/// need to re-check them, by design. What the server checks: the claim is
+/// well-formed, the ride verified, the target exists, and any code is
+/// well-formed (whether it is the RIGHT code is `check_chain`'s job).
+pub fn evaluate(c: &FoglineClaim) -> Result<Target, String> {
     if c.v != CLAIM_VERSION {
         return Err(format!("unsupported claim version {}", c.v));
     }
@@ -162,7 +203,93 @@ pub fn evaluate(c: &FoglineClaim) -> Result<&'static QuestDef, String> {
     {
         return Err("rideId is malformed".into());
     }
-    quest(&c.quest_id).ok_or_else(|| format!("unknown quest {}", c.quest_id))
+    if let Some(code) = &c.code {
+        if !is_code(code) {
+            return Err("code is malformed".into());
+        }
+    }
+    if let Some(i) = chapter_index(&c.quest_id) {
+        return Ok(Target::Chapter(i));
+    }
+    quest(&c.quest_id)
+        .map(Target::Quest)
+        .ok_or_else(|| format!("unknown quest {}", c.quest_id))
+}
+
+// ---------------------------------------------------------------------
+// Letter chain: per-address codes
+// ---------------------------------------------------------------------
+
+/// 32 symbols with no I, O, 0 or 1 — and 256 is a multiple of 32, so
+/// `byte % 32` is unbiased.
+const CODE_ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/// `ABCD-EFGH` over CODE_ALPHABET — mirrors CODE_PATTERN in chapters.ts.
+pub fn is_code(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 9
+        && b[4] == b'-'
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| i == 4 || CODE_ALPHABET.contains(c))
+}
+
+/// The code that opens chapter `chapter` for address `ua`. Deterministic
+/// under the server secret, unguessable without it, and different for every
+/// address — a code posted online opens nothing for anyone else.
+pub fn mint_code(secret: &[u8; 32], ua: &str, chapter: usize) -> String {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(secret).expect("HMAC accepts any key length");
+    mac.update(format!("fogline-code-v1|{ua}|{chapter}").as_bytes());
+    let tag = mac.finalize().into_bytes();
+    let ch: Vec<char> = tag
+        .iter()
+        .take(8)
+        .map(|b| CODE_ALPHABET[(b % 32) as usize] as char)
+        .collect();
+    format!(
+        "{}-{}",
+        ch[..4].iter().collect::<String>(),
+        ch[4..].iter().collect::<String>()
+    )
+}
+
+/// Is this claim for the chapter this address is on, with the right code?
+/// `Err` carries a machine-readable prefix the app acts on.
+pub fn check_chain(
+    position: usize,
+    chapter: usize,
+    code: Option<&str>,
+    expected: Option<&str>,
+) -> Result<(), String> {
+    if chapter != position {
+        return Err(format!("chapter_mismatch: this address is on chapter {}", position + 1));
+    }
+    if position == 0 {
+        return Ok(());
+    }
+    match (code, expected) {
+        (Some(c), Some(e)) if c == e => Ok(()),
+        _ => Err("code_mismatch: that code does not match your last letter".into()),
+    }
+}
+
+/// The memo for a drop: the letter, and the next chapter's code when there
+/// is one. Validated against the 512-byte limit by tests.
+pub fn letter_memo(target: Target, next_code: Option<&str>) -> String {
+    match target {
+        Target::Quest(q) => q.letter.clone(),
+        Target::Chapter(i) => {
+            let letter = &chapters()[i].letter;
+            match next_code {
+                Some(code) => format!(
+                    "{letter}\n\nNEXT CODE: {code}\nEnter it in Fogline to open the next chapter."
+                ),
+                None => letter.clone(),
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -189,6 +316,7 @@ CREATE TABLE IF NOT EXISTS fogline_claims (
     ride_id        TEXT PRIMARY KEY,
     recipient_ua   TEXT NOT NULL,
     quest_id       TEXT NOT NULL,   -- no tiles, no route: see module docs
+    chapter        INTEGER,         -- chain chapter (0-based) when quest_id is a chapter
     status         TEXT NOT NULL,   -- capped|treasury_paused|paying|paid|failed
     payout_zat     INTEGER,
     payout_txid    TEXT,
@@ -199,6 +327,11 @@ CREATE TABLE IF NOT EXISTS fogline_claims (
 );
 CREATE INDEX IF NOT EXISTS idx_fogline_ua_day ON fogline_claims(recipient_ua, utc_day);
 CREATE INDEX IF NOT EXISTS idx_fogline_day ON fogline_claims(utc_day, status);
+CREATE TABLE IF NOT EXISTS fogline_chain (
+    recipient_ua   TEXT PRIMARY KEY,
+    next_chapter   INTEGER NOT NULL,  -- 0-based chapter this address plays next
+    updated_at     INTEGER NOT NULL
+);
 ";
 
 pub fn utc_day(now_secs: u64) -> i64 {
@@ -262,15 +395,16 @@ pub fn insert(
     ride_id: &str,
     ua: &str,
     quest_id: &str,
+    chapter: Option<usize>,
     status: &str,
     reason: Option<&str>,
     now: u64,
 ) -> rusqlite::Result<bool> {
     let n = conn.execute(
         "INSERT OR IGNORE INTO fogline_claims
-           (ride_id, recipient_ua, quest_id, status, reason, utc_day, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-        params![ride_id, ua, quest_id, status, reason, utc_day(now), now as i64],
+           (ride_id, recipient_ua, quest_id, chapter, status, reason, utc_day, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+        params![ride_id, ua, quest_id, chapter.map(|c| c as i64), status, reason, utc_day(now), now as i64],
     )?;
     Ok(n == 1)
 }
@@ -292,6 +426,95 @@ pub fn set_status(
         params![ride_id, status, txid, payout_zat.map(|v| v as i64), reason, now as i64],
     )?;
     Ok(())
+}
+
+/// The chapter this address plays next (0 if it has never claimed).
+pub fn chain_position(conn: &Connection, ua: &str) -> rusqlite::Result<usize> {
+    let v: Option<i64> = conn
+        .query_row(
+            "SELECT next_chapter FROM fogline_chain WHERE recipient_ua = ?1",
+            params![ua],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(v.map(|n| n.max(0) as usize).unwrap_or(0))
+}
+
+pub fn set_chain_position(conn: &Connection, ua: &str, next: usize, now: u64) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO fogline_chain (recipient_ua, next_chapter, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(recipient_ua) DO UPDATE SET next_chapter = excluded.next_chapter,
+                                                updated_at = excluded.updated_at",
+        params![ua, next as i64, now as i64],
+    )?;
+    Ok(())
+}
+
+/// Undo a chapter reservation after a failed or paused letter — but only if
+/// the address still sits exactly one past it, so a later success is never
+/// rolled back by a stale failure.
+pub fn rollback_chain(conn: &Connection, ua: &str, chapter: usize, now: u64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE fogline_chain SET next_chapter = ?2, updated_at = ?3
+          WHERE recipient_ua = ?1 AND next_chapter = ?4",
+        params![ua, chapter as i64, now as i64, (chapter + 1) as i64],
+    )?;
+    Ok(())
+}
+
+/// Startup recovery: nothing can be mid-payout at boot, so every `paying`
+/// row was abandoned. Mark it failed (it stops counting against caps) and
+/// return its chapter reservation, so the rider is not stranded waiting for
+/// a letter that will never come.
+pub fn recover_abandoned(conn: &Connection, now: u64) -> rusqlite::Result<usize> {
+    let rows: Vec<(String, Option<i64>)> = {
+        let mut st = conn.prepare(
+            "SELECT recipient_ua, chapter FROM fogline_claims WHERE status = 'paying'",
+        )?;
+        let it = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        it.collect::<rusqlite::Result<_>>()?
+    };
+    for (ua, ch) in &rows {
+        if let Some(c) = ch {
+            rollback_chain(conn, ua, (*c).max(0) as usize, now)?;
+        }
+    }
+    conn.execute(
+        "UPDATE fogline_claims SET status = 'failed', updated_at = ?1,
+             reason = 'auto-recovered: payout abandoned at restart'
+         WHERE status = 'paying'",
+        params![now as i64],
+    )?;
+    Ok(rows.len())
+}
+
+/// The server's code secret, created on first use and kept only in this
+/// database. Losing it invalidates outstanding codes (riders mid-chain would
+/// need a re-sent letter); it is never logged or returned by any endpoint.
+pub fn code_secret(conn: &Connection, now: u64) -> rusqlite::Result<[u8; 32]> {
+    const KEY: &str = "fogline_code_secret";
+    let existing: Option<String> = conn
+        .query_row("SELECT value FROM wallet_state WHERE key = ?1", params![KEY], |r| r.get(0))
+        .optional()?;
+    if let Some(h) = existing {
+        if let Ok(bytes) = hex::decode(h.trim()) {
+            if let Ok(arr) = <[u8; 32]>::try_from(bytes.as_slice()) {
+                return Ok(arr);
+            }
+        }
+    }
+    let mut fresh = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut fresh);
+    conn.execute(
+        "INSERT INTO wallet_state (key, value, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO NOTHING",
+        params![KEY, hex::encode(fresh), now as i64],
+    )?;
+    // Re-read: if two callers raced, both end up with the stored one.
+    let stored: String =
+        conn.query_row("SELECT value FROM wallet_state WHERE key = ?1", params![KEY], |r| r.get(0))?;
+    let bytes = hex::decode(stored.trim()).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| rusqlite::Error::InvalidQuery)
 }
 
 // Known treasury balance, cached in the existing wallet_state table. Like
@@ -353,6 +576,7 @@ mod tests {
             ride_id: "01HXTEST000001".into(),
             quest_id: quests()[0].id.clone(),
             pass: true,
+            code: None,
             attestation: None,
         }
     }
@@ -382,7 +606,73 @@ mod tests {
 
     #[test]
     fn accepts_a_wellformed_claim() {
-        assert_eq!(evaluate(&claim()).unwrap().id, "q-bend-river-line");
+        match evaluate(&claim()).unwrap() {
+            Target::Quest(q) => assert_eq!(q.id, "q-bend-river-line"),
+            other => panic!("expected the River Line, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn chapters_parse_in_order() {
+        let ids: Vec<&str> = chapters().iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["ch-1", "ch-2", "ch-3"]);
+        let mut c = claim();
+        c.quest_id = "ch-2".into();
+        assert_eq!(evaluate(&c).unwrap(), Target::Chapter(1));
+    }
+
+    #[test]
+    fn codes_are_per_address_and_well_formed() {
+        let secret = [7u8; 32];
+        let a = mint_code(&secret, "u1alice", 1);
+        assert!(is_code(&a), "{a}");
+        assert_eq!(a, mint_code(&secret, "u1alice", 1), "deterministic");
+        assert_ne!(a, mint_code(&secret, "u1bob", 1), "per address");
+        assert_ne!(a, mint_code(&secret, "u1alice", 2), "per chapter");
+        assert_ne!(a, mint_code(&[8u8; 32], "u1alice", 1), "per secret");
+        for bad in ["", "ABCD-EFG", "ABCDEFGHI", "ABCD-EFG0", "abcd-efgh", "ABCD_EFGH"] {
+            assert!(!is_code(bad), "{bad}");
+        }
+        let mut c = claim();
+        c.code = Some("not-a-code".into());
+        assert!(evaluate(&c).is_err());
+    }
+
+    #[test]
+    fn chain_order_and_codes_are_enforced() {
+        let e = Some("ABCD-EFGH");
+        assert!(check_chain(0, 0, None, None).is_ok(), "chapter 1 needs no code");
+        assert!(check_chain(1, 1, e, e).is_ok());
+        let wrong = check_chain(1, 1, Some("ZZZZ-ZZZZ"), e).unwrap_err();
+        assert!(wrong.starts_with("code_mismatch"));
+        assert!(check_chain(1, 1, None, e).unwrap_err().starts_with("code_mismatch"));
+        let skip = check_chain(0, 2, e, e).unwrap_err();
+        assert!(skip.starts_with("chapter_mismatch"));
+        assert!(check_chain(2, 1, e, e).unwrap_err().starts_with("chapter_mismatch"), "no replaying an old chapter");
+    }
+
+    #[test]
+    fn every_letter_fits_in_a_memo() {
+        let code = mint_code(&[1u8; 32], "u1x", 1);
+        for i in 0..chapters().len() {
+            let next = if i + 1 < chapters().len() { Some(code.as_str()) } else { None };
+            let memo = letter_memo(Target::Chapter(i), next);
+            assert!(crate::spend::spender::text_memo(&memo).is_ok(), "chapter {i}: {} bytes", memo.len());
+            if let Some(c) = next {
+                assert!(memo.contains(c), "chapter {i} memo must carry the next code");
+            }
+        }
+        let last = letter_memo(Target::Chapter(chapters().len() - 1), None);
+        assert!(!last.contains("NEXT CODE"), "the finale has no next chapter");
+        let river = letter_memo(Target::Quest(&quests()[0]), None);
+        assert!(crate::spend::spender::text_memo(&river).is_ok());
+    }
+
+    #[test]
+    fn letters_carry_no_location() {
+        for c in chapters() {
+            assert!(!c.letter.contains("fl1:"), "{}", c.id);
+        }
     }
 
     #[test]
@@ -406,6 +696,7 @@ mod tests {
             ride_id: "01HXVECTOR0001".into(),
             quest_id: "q-bend-river-line".into(),
             pass: true,
+            code: None,
             attestation: None,
         };
         assert_eq!(
@@ -475,12 +766,12 @@ mod tests {
 
         let now = 1_800_000_000;
         let day = utc_day(now);
-        assert!(insert(&conn, "r1", "u1a", "q", "paying", None, now).unwrap());
-        assert!(!insert(&conn, "r1", "u1a", "q", "paying", None, now).unwrap(), "idempotent");
+        assert!(insert(&conn, "r1", "u1a", "q", None, "paying", None, now).unwrap());
+        assert!(!insert(&conn, "r1", "u1a", "q", None, "paying", None, now).unwrap(), "idempotent");
         assert_eq!(paid_today_for(&conn, "u1a", day).unwrap(), 1);
 
-        insert(&conn, "r2", "u1a", "q", "capped", None, now).unwrap();
-        insert(&conn, "r3", "u1a", "q", "failed", None, now).unwrap();
+        insert(&conn, "r2", "u1a", "q", None, "capped", None, now).unwrap();
+        insert(&conn, "r3", "u1a", "q", None, "failed", None, now).unwrap();
         assert_eq!(paid_today_for(&conn, "u1a", day).unwrap(), 1, "only paying/paid count");
         assert_eq!(paid_today_for(&conn, "u1a", day + 1).unwrap(), 0);
         assert_eq!(paid_today_global(&conn, day).unwrap(), 1);
@@ -496,5 +787,36 @@ mod tests {
         assert_eq!(fee_estimate(&conn), 20_000);
         clear_known_balance(&conn);
         assert_eq!(known_balance(&conn), None);
+    }
+
+    #[test]
+    fn chain_reserve_rollback_and_recovery() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE wallet_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+        )
+        .unwrap();
+        let now = 1_800_000_000;
+
+        assert_eq!(chain_position(&conn, "u1a").unwrap(), 0);
+        // Reserve chapter 0 while its letter pays.
+        set_chain_position(&conn, "u1a", 1, now).unwrap();
+        insert(&conn, "r1", "u1a", "ch-1", Some(0), "paying", None, now).unwrap();
+
+        // A stale rollback for a different chapter changes nothing.
+        rollback_chain(&conn, "u1a", 2, now).unwrap();
+        assert_eq!(chain_position(&conn, "u1a").unwrap(), 1);
+
+        // Crash mid-payout: recovery fails the row and returns the reservation.
+        assert_eq!(recover_abandoned(&conn, now).unwrap(), 1);
+        assert_eq!(fetch(&conn, "r1").unwrap().unwrap().status, "failed");
+        assert_eq!(chain_position(&conn, "u1a").unwrap(), 0);
+
+        // The secret is created once and then stable.
+        let s1 = code_secret(&conn, now).unwrap();
+        let s2 = code_secret(&conn, now).unwrap();
+        assert_eq!(s1, s2);
+        assert_ne!(s1, [0u8; 32]);
     }
 }
