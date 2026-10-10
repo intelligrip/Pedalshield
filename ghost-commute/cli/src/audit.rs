@@ -58,7 +58,14 @@ pub async fn pack(
     let mut skipped = vec![];
     for txid in txids {
         let tf = tx_file_for(tx_dir, txid);
-        let (tx, height, _source) = net::load_tx(txid, tf.as_deref(), server, n).await?;
+        let (tx, height, _source) = match net::load_tx(txid, tf.as_deref(), server, n).await {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("  ✗ {txid}: could not load ({e:#}); skipped");
+                skipped.push(txid.to_string());
+                continue;
+            }
+        };
         let found = disclose::find_notes(&tx, fvk, Role::Sender);
         if found.is_empty() {
             skipped.push(txid.to_string());

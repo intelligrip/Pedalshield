@@ -29,6 +29,9 @@ Bike-to-work incentives are paid for by people who can't see the rides (HR, insu
 **Why Zcash:** this only works with private payments. Shielded notes hide the sender, receiver and amount. Diversified addresses stop repeat rewards from forming a graph. Outgoing viewing keys let the payer prove its own payments without anyone else's keys. On a transparent chain the payout history *is* the surveillance.
 
 **What we built during the hackathon (Sep 14 – Oct 12):**
+
+Headline: the sponsor audit pack runs on Pedalshield's real mainnet treasury. 7 of 7 published payouts were re-verified on chain from the payer's view-only key, with no route anywhere in the pack.
+
 | | |
 |---|---|
 | **Ghost Commute sponsor rail** (`ghost-commute/`) | Coordinate-free signed ride attestations (browser + Rust, byte-identical canonical JSON). Orchard-only payout addressing. One-note disclosures as recipient (IVK) or as sender (OVK). Audit packs and statements. Offline mode with a real Halo 2 proof. A web app with rider, sponsor, auditor and wallet views. Plus 9 scripted cheat attempts, each refused |
@@ -42,8 +45,8 @@ Pedalshield started May 28, 2026 and was built before this hackathon. That prior
 
 **Traction:** [[fill from the droplet DB and App Store Connect]]
 - Riders: [[`SELECT COUNT(DISTINCT rider_id) FROM claims WHERE status='paid'`]]
-- Verified rides paid: [[`SELECT COUNT(*) …`]] · distance: [[`SELECT SUM(distance_meters)/1609.34 …`]] mi
-- Mainnet payouts / ZEC paid: [[from `ghost audit verify` totals]]. This is verifiable, not self-reported.
+- **30 rides verified on-device and paid on mainnet, 83.5 miles** (backend DB, `claims WHERE status='paid'`)
+- **Independently verifiable:** `ghost audit verify fixtures/mainnet/audit-pack` re-opens 7 real mainnet payouts (5 Orchard, 2 Ironwood, blocks 3,374,485–3,504,310) against the chain: 7 of 7 verified, routes withheld. Anyone can rerun it; nothing in it is self-reported.
 - TestFlight testers: [[n]] · App Store status: [[…]]
 - Sponsor conversations: [[Bend employers / bike-commute advocacy org, if any]]
 

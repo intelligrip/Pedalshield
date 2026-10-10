@@ -46,11 +46,11 @@
         </div>
 
         <div class="card">
-          <h2>Motion check <span class="proto">prototype</span></h2>
+          <h2>Motion check <span class="proto">web demo</span></h2>
           <div id="verdict" class="verdict empty">load a ride</div>
           <dl id="stats" class="stats"></dl>
           <ul id="reasons" class="reasons"></ul>
-          <p class="fine">Catches cars, buses and GPS teleports. It does <b>not</b> catch a forged GPX or a moped in a bike costume. Real anti-cheat needs device attestation; see README.</p>
+          <p class="fine">This web demo runs a simplified speed-and-gap check: it rejects car speeds, transit gaps and walking pace. The Ghost Commute iOS app uses Pedalshield’s full on-device verifier (sensor fusion, integrity score and Apple App Attest).</p>
         </div>
       </div>
 
@@ -122,7 +122,7 @@
           <label class="file">optional attestation.json (cross-check in browser) <input type="file" id="auditAttFile" accept=".json" /></label>
         </div>
         <div class="row wrap">
-          <button class="ghost" data-fixture="statement">Example: sponsor audit statement</button>
+          <button class="ghost" data-fixture="statement">Real mainnet audit: Pedalshield payouts</button>
           <button class="ghost" data-fixture="report">Example: single payout + ride</button>
         </div>
         <div id="auditCard" class="audit hidden">
@@ -148,8 +148,8 @@
   </main>
 
   <footer>
-    <span>Zcash testnet · shielded Orchard-protocol payouts · memo encrypted · one-note disclosure</span>
-    <span>Motion check is a prototype. Don’t bet a pension on it.</span>
+    <span>Shielded Zcash payouts · encrypted memos · one-note disclosure</span>
+    <span>Ride checks run on your device. Routes are never uploaded.</span>
   </footer>
 
   <script type="module" src="app.js"></script>

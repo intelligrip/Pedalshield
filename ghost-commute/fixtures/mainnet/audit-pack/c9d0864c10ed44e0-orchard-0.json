@@ -1,0 +1,22 @@
+{
+  "action_index": 0,
+  "issued_by": "sender",
+  "mined_height": 3385064,
+  "network": "main",
+  "pool": "orchard",
+  "receipt_id": null,
+  "recipient": "u1hcjhwshptvq8ur25m85m6gxasdjljc6az8lr55y2dds8cjv040d4yz5aetglxve253628evpfmx4l6r4cyrlfs7v7gmkxsfksghtsz8c",
+  "rseed": "804d2411bc3c4167ed8a3df530f1af93045458e15116fd9bc484c5e81062e8d0",
+  "txid": "c9d0864c10ed44e011e39716f0fc7cdb1fe913fe0d614129a07961b2578b37a5",
+  "v": "ghost-commute/disclosure/1",
+  "value_zat": 308,
+  "withheld": [
+    "route",
+    "gps trace",
+    "home",
+    "workplace",
+    "other notes in this wallet",
+    "viewing keys",
+    "spending keys"
+  ]
+}

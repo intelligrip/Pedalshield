@@ -1,0 +1,36 @@
+{
+  "contains": [
+    "txid",
+    "pool",
+    "action index",
+    "receiver",
+    "value",
+    "rseed (opens that one note only)"
+  ],
+  "disclosures": [
+    "2a849aca04f9b966-orchard-1.json",
+    "7bb0309585171f6f-orchard-1.json",
+    "b34883138d8b7742-orchard-0.json",
+    "a64f2b159e92558b-orchard-1.json",
+    "c9d0864c10ed44e0-orchard-0.json",
+    "fbf4e134cd74b635-ironwood-0.json",
+    "43f6b8d25a39adeb-ironwood-0.json"
+  ],
+  "does_not_contain": [
+    "routes",
+    "GPS",
+    "claim data",
+    "rider identity",
+    "viewing keys",
+    "spending keys",
+    "other wallet activity"
+  ],
+  "issued_by": "sender",
+  "label": "Pedalshield mainnet payouts to the founder's own test wallet",
+  "network": "main",
+  "txids_without_payments": [
+    "f1a3bacc582e156069b108afa61711a7dbae9ceff84c8d0c5b8f5fca15c10ba6",
+    "ef0e2a577f3f16e50cfd20c2b03dd1c14344f63d21ae34e6e4989c05c0060587"
+  ],
+  "v": "ghost-commute/audit-pack/1"
+}

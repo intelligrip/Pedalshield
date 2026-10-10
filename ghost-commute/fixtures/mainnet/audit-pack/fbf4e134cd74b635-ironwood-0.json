@@ -1,0 +1,22 @@
+{
+  "action_index": 0,
+  "issued_by": "sender",
+  "mined_height": 3429620,
+  "network": "main",
+  "pool": "ironwood",
+  "receipt_id": null,
+  "recipient": "u1ysxscux0k8nv26zxzf4rxlanxw9fl0qdm9076wgfnx6n4qkjvd8867tpfd4ldrsdluwmm6a468ce93k3t8xxwhkxnzzek23qycv4ex4f",
+  "rseed": "0b6178e83a57b44ca2b3befd7af782aab300c9aeecc40f0b7325012eab7c9413",
+  "txid": "fbf4e134cd74b635c598d869f1cafffd902f649fac44cfb6ef534e8e01d16ed8",
+  "v": "ghost-commute/disclosure/1",
+  "value_zat": 26437,
+  "withheld": [
+    "route",
+    "gps trace",
+    "home",
+    "workplace",
+    "other notes in this wallet",
+    "viewing keys",
+    "spending keys"
+  ]
+}

@@ -42,8 +42,9 @@ export function haversineM(a, b) {
 //
 // This is a plausibility filter, not anti-cheat. It catches a phone that was in
 // a car, on a train, or that "teleported" across a GPS gap. It does NOT catch a
-// forged GPX file, a phone strapped to a slow moped, or an e-bike in a bike
-// costume. See README "Known limits".
+// forged GPX file, a phone on a slow scooter, or an e-bike. The iOS app
+// uses Pedalshield's full on-device verifier instead of this check.
+// See README "Known limits".
 
 export const THRESHOLDS = {
   minPoints: 20,
@@ -105,7 +106,7 @@ export function motionCheck(points, T = THRESHOLDS) {
     reasons.push(`median ${median.toFixed(0)} km/h, p95 ${p95.toFixed(0)} km/h, ${(shareAbove40 * 100).toFixed(0)}% of moving time above 40 km/h`);
   } else if (median < T.walkMedianKmh) {
     verdict = "walk";
-    reasons.push(`median moving speed ${median.toFixed(1)} km/h — that's a walk. Respect, but no.`);
+    reasons.push(`median moving speed ${median.toFixed(1)} km/h : walking pace, not a ride.`);
   }
   return {
     verdict,
