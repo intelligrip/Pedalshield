@@ -3,32 +3,90 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ghost Commute</title>
+  <title>Ghost Commute by Pedalshield</title>
+  <meta name="description" content="Proof of payment, never proof of whereabouts. Bike rides verified on the phone, paid in shielded ZEC, audited without the route." />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <span class="logo" aria-hidden="true">◌</span>
-      <div>
-        <h1>Ghost Commute</h1>
-        <p class="tag">Get paid to bike. Nobody learns where you live.</p>
+  <header class="topbar">
+    <a class="wordmark" href="#top"><span class="logo" aria-hidden="true">◌</span><span><b>Ghost Commute</b> <span class="by">by Pedalshield</span></span></a>
+    <nav class="links" aria-label="Site">
+      <a class="wide" href="#how">How it works</a>
+      <a href="#audit">Mainnet audit</a>
+      <a class="wide" href="#prototype">Prototype</a>
+      <a href="https://github.com/intelligrip/Pedalshield/tree/main/ghost-commute" target="_blank" rel="noopener">Code</a>
+      <a class="cta" href="https://pedalshield.app/beta/" target="_blank" rel="noopener">Get Pedalshield</a>
+    </nav>
+  </header>
+
+  <div class="page" id="top">
+    <section class="hero">
+      <p class="eyebrow">Shielded payments on Zcash · Bend, Oregon</p>
+      <h1>Proof of payment, never proof of whereabouts.</h1>
+      <p class="lead">Employers and cities pay people to bike to work, and to prove the rides they collect GPS trails. <b>Pedalshield</b> verifies each ride on the phone and pays riders in shielded ZEC on mainnet. <b>Ghost Commute</b> gives the sponsor an audit that proves every payout on chain and contains no route.</p>
+      <div class="row wrap">
+        <a class="button primary" href="#audit">See the mainnet audit</a>
+        <a class="button" href="#how">How it works</a>
       </div>
-      <div class="links">
-        <span class="by">by <a href="https://pedalshield.app" target="_blank" rel="noopener">Pedalshield</a></span>
-        <a href="https://github.com/intelligrip/Pedalshield/tree/main/ghost-commute" target="_blank" rel="noopener">Code</a>
-        <a href="https://pedalshield.app/beta/" target="_blank" rel="noopener">Get the app</a>
+    </section>
+
+    <section class="numbers" aria-label="Live numbers">
+      <div><b>30</b><span>rides verified and paid on mainnet</span></div>
+      <div><b>83.5 mi</b><span>ridden, May 31 – Sep 28, 2026</span></div>
+      <div><b>3</b><span>claims rejected, never paid</span></div>
+      <div><b>7 / 7</b><span>payouts re-verified on chain</span></div>
+    </section>
+
+    <section class="band" id="problem">
+      <h2>The problem</h2>
+      <div class="cols">
+        <p><b>Proof means surveillance.</b> A sponsor that can't see the rides asks for a GPS trail: home, office and schedule, sitting in a vendor's database. Washington, Oregon and California now treat that data as sensitive or health data.</p>
+        <p><b>Public payouts are worse.</b> Pay riders on a transparent blockchain and "home to work, every weekday" becomes a permanent public record. The payout history is the map.</p>
       </div>
-    </div>
-    <nav role="tablist">
+    </section>
+
+    <section class="band" id="how">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li><span class="step">1</span><h3>Verified on the phone</h3><p>The Pedalshield app checks the ride on the device. The claim it sends has no coordinates; an open-source test enforces that.</p><span class="status live">Live</span></li>
+        <li><span class="step">2</span><h3>Paid in shielded ZEC</h3><p>An autonomous treasury, built on librustzcash, pays the rider's own wallet on Zcash mainnet. Sender, recipient and amount are hidden. Ironwood pool since NU6.3.</p><span class="status live">Live</span></li>
+        <li><span class="step">3</span><h3>Audited without the route</h3><p>Ghost Commute uses the treasury's viewing key to issue a one-note disclosure per payout. Anyone can check the amount and recipient against the chain. The route was never sent anywhere.</p><span class="status live">Live on mainnet · built this hackathon</span></li>
+      </ol>
+    </section>
+
+    <section class="band" id="audit">
+      <h2>Real mainnet audit</h2>
+      <p class="sub">Seven real Pedalshield payouts, re-opened from their disclosures and re-checked against Zcash mainnet. This is the statement a sponsor's finance team would receive.</p>
+      <div id="liveAudit" class="audit"><div class="stamp">ROUTE<br />WITHHELD</div><p class="fine">Loading statement…</p></div>
+      <p class="fine">Rerun it yourself: <code>cd ghost-commute/cli &amp;&amp; cargo build --release &amp;&amp; ./target/release/ghost audit verify ../fixtures/mainnet/audit-pack</code></p>
+    </section>
+
+    <section class="band" id="status">
+      <h2>What's live and what's next</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>On-device ride verification, coordinate-free claims</td><td><span class="status live">Live</span></td></tr>
+          <tr><td>Autonomous shielded payouts on mainnet (Orchard → Ironwood)</td><td><span class="status live">Live</span></td></tr>
+          <tr><td>Sponsor audit packs from the treasury's viewing key</td><td><span class="status live">Live on mainnet</span></td></tr>
+          <tr><td>Signed ride attestations, fresh address per payout, encrypted memo receipts</td><td><span class="status beta">Prototype, below</span></td></tr>
+          <tr><td>App Attest verification</td><td><span class="status next">Collecting, not yet verified</span></td></tr>
+          <tr><td>Employer pilot, sponsor-funded reward pool</td><td><span class="status next">Next: 50-seat Bend pilot</span></td></tr>
+          <tr><td>FROST threshold signing, ZK proof of distance</td><td><span class="status next">Roadmap</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section class="band" id="prototype">
+      <h2>Prototype: the sponsor-claim flow</h2>
+      <p class="sub">Where Ghost Commute goes next. Runs entirely in your browser on sample data: a ride is checked locally, signed without coordinates, and paid with a receipt the sponsor can audit. Not yet in the Pedalshield app.</p>
+      <nav role="tablist">
       <button role="tab" data-tab="ride" aria-selected="true">1 · Ride</button>
       <button role="tab" data-tab="sponsor">2 · Sponsor</button>
       <button role="tab" data-tab="auditor">3 · Auditor</button>
       <button role="tab" data-tab="wallet">4 · Rider wallet</button>
     </nav>
-  </header>
-
-  <main>
+<main class="proto-tabs">
     <!-- RIDE -->
     <section id="ride" class="tab active">
       <div class="lede">
@@ -55,7 +113,7 @@
           <div id="verdict" class="verdict empty">load a ride</div>
           <dl id="stats" class="stats"></dl>
           <ul id="reasons" class="reasons"></ul>
-          <p class="fine">This web demo runs a simplified speed-and-gap check: it rejects car speeds, transit gaps and walking pace. The Ghost Commute iOS app uses Pedalshield’s full on-device verifier (sensor fusion, integrity score and Apple App Attest).</p>
+          <p class="fine">This web demo runs a simplified speed-and-gap check: it rejects car speeds, transit gaps and walking pace. The Pedalshield app uses its full on-device verification engine instead.</p>
         </div>
       </div>
 
@@ -151,10 +209,12 @@
       </div>
     </section>
   </main>
+    </section>
+  </div>
 
   <footer>
-    <span>Shielded Zcash payouts · encrypted memos · one-note disclosure</span>
-    <span>Ride checks run on your device. Routes are never uploaded.</span>
+    <span>Ghost Commute by Pedalshield · shielded payouts on Zcash mainnet · Bend, Oregon</span>
+    <span><a href="https://github.com/intelligrip/Pedalshield" target="_blank" rel="noopener">GitHub</a> · <a href="https://pedalshield.app" target="_blank" rel="noopener">pedalshield.app</a></span>
   </footer>
 
   <script type="module" src="app.js"></script>

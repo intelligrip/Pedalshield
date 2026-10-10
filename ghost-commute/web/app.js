@@ -282,3 +282,32 @@ function renderReceipt(r) {
     <div class="fine">tx <code>${esc(r.txid)}</code> · on chain this memo is 512 bytes of ChaCha20-Poly1305 ciphertext.</div>`;
   $("#memoCard").classList.remove("hidden");
 }
+
+// ---------- landing: live mainnet audit ----------
+(async function renderLiveAudit() {
+  const box = document.querySelector("#liveAudit");
+  if (!box) return;
+  try {
+    const st = await loadFixture("statement");
+    const rows = (st.items || []).map((it) => `
+      <tr>
+        <td><code>${esc(String(it.txid).slice(0, 12))}…</code></td>
+        <td>${esc(it.pool || "")}</td>
+        <td class="num">${it.value_zat != null ? (it.value_zat / 1e8).toFixed(8) : "—"}</td>
+        <td class="num">${it.mined_height ?? "—"}</td>
+        <td class="${it.verified ? "ok" : "bad"}">${it.verified ? "✓ verified" : "✗ " + esc(it.error || "failed")}</td>
+      </tr>`).join("");
+    const pools = Object.entries(st.pools || {}).map(([k, v]) => `${v} ${esc(k)}`).join(", ");
+    box.innerHTML = `
+      <div class="stamp">ROUTE<br />WITHHELD</div>
+      <div class="audit-head">${st.all_verified ? `<span class="ok">✓ ${st.verified} of ${st.payouts} payouts verified</span>` : `<span class="bad">${st.verified} of ${st.payouts} verified</span>`}</div>
+      <p class="fine">${esc(st.label || "")} · Zcash ${esc(st.network === "main" ? "mainnet" : st.network)} · ${pools} · blocks ${st.mined_height_range ? st.mined_height_range.join("–") : "—"}</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Transaction</th><th>Pool</th><th class="num">ZEC</th><th class="num">Block</th><th>Check</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <p class="fine">Each row re-opens one shielded payout from its disclosure: the note commitment matches the transaction on chain, and the amount and recipient are proven. Nothing else in either wallet is visible, and no route exists to show.</p>`;
+  } catch {
+    box.innerHTML = `<p class="fine">The audit statement couldn't load here. It's in the repo at <code>ghost-commute/fixtures/mainnet/statement.json</code>.</p>`;
+  }
+})();
