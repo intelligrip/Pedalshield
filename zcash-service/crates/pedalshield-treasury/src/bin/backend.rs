@@ -75,6 +75,10 @@ struct AppState {
     /// treasury loss while claim signatures are unverified. See post_claim.
     min_claim_interval_s: u64,
     require_signed_claims: bool,
+    /// PEDALSHIELD_RECEIPT_MEMO=1: each payout carries an encrypted memo
+    /// receipt (see `receipt_memo`). Off by default; unset it to fall back
+    /// to memo-less payouts instantly.
+    receipt_memo: bool,
     claim_signature_max_age_s: u64,
     ua_daily_meters: u64,
     global_daily_meters: u64,
@@ -1914,6 +1918,23 @@ impl TrustConfig {
 }
 
 #[cfg(test)]
+mod receipt_tests {
+    use super::*;
+    #[test]
+    fn receipt_memo_shape() {
+        let m = receipt_memo("ride-123", "c2lnbmF0dXJl", 2_437);
+        assert!(m.starts_with("GHOST1 r="));
+        assert!(m.contains(" d=2.4km\n"));
+        assert!(m.len() <= 512);
+        let r = m.split(' ').nth(1).unwrap().strip_prefix("r=").unwrap();
+        assert_eq!(r.len(), 32);
+        assert!(r.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(receipt_id("ride-123", "a"), receipt_id("ride-123", "b"));
+        assert!(!m.contains("lat") && !m.contains("lon"));
+    }
+}
+
+#[cfg(test)]
 mod split_tests {
     use super::*;
 
@@ -2078,6 +2099,27 @@ struct PayoutOutcome {
     txid: String,
 }
 
+/// Receipt id for a claim: the first 16 bytes of SHA-256 over the claim id
+/// and the device signature the rider's phone produced for it. Anyone holding
+/// the signed claim can recompute it; the chain only ever sees ciphertext.
+fn receipt_id(claim_id: &str, signature: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(format!("pedalshield-receipt-v1|{claim_id}|{signature}").as_bytes());
+    hex::encode(&h[..16])
+}
+
+/// Encrypted memo carried by a payout. Line 1 is machine-readable and uses
+/// the same `GHOST1 r=… d=…km` shape the Ghost Commute audit tool parses;
+/// line 2 is for the rider. No location, ever: distance only.
+fn receipt_memo(claim_id: &str, signature: &str, distance_meters: u64) -> String {
+    format!(
+        "GHOST1 r={} d={}.{}km\nPedalshield: ride verified on your phone. The route never left it.",
+        receipt_id(claim_id, signature),
+        distance_meters / 1000,
+        (distance_meters % 1000) / 100
+    )
+}
+
 /// Core autonomous payout, shared by the auto-trigger on claim submission
 /// and the manual `/approve` endpoint. Reserve (pending -> paying), then
 /// build + prove + sign + broadcast a shielded Orchard spend and mark
@@ -2151,7 +2193,10 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
     // Serialize payouts so concurrent claims can't pick the same note.
     let result = {
         let _guard = state.payout_lock.lock().await;
-        pedalshield_treasury::spend::spender::pay(
+        let memo = state
+            .receipt_memo
+            .then(|| receipt_memo(&claim.id, &claim.signature, claim.distance_meters));
+        pedalshield_treasury::spend::spender::pay_with_memo(
             &state.lightwalletd,
             &sk,
             &claim.recipient_ua,
@@ -2159,6 +2204,7 @@ async fn run_payout(state: AppState, id: String) -> Result<PayoutOutcome, Payout
             state.birthday,
             scan_from,
             true, // broadcast
+            memo.as_deref(),
         )
         .await
     };
@@ -3111,6 +3157,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok().and_then(|v| v.parse().ok()).unwrap_or(600);
     // Security v0.7: leave OFF during rollout so installed builds keep
     // working; flip to 1 once riders are on a claim-signing app build.
+    let receipt_memo: bool = env::var("PEDALSHIELD_RECEIPT_MEMO")
+        .map(|v| v == "1").unwrap_or(false);
     let require_signed_claims: bool = env::var("PEDALSHIELD_REQUIRE_SIGNED_CLAIMS")
         .map(|v| v != "0").unwrap_or(false);
     let claim_signature_max_age_s: u64 = env::var("PEDALSHIELD_CLAIM_SIG_MAX_AGE_S")
@@ -3176,6 +3224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_payout_zat,
         min_claim_interval_s,
         require_signed_claims,
+        receipt_memo,
         claim_signature_max_age_s,
         ua_daily_meters,
         global_daily_meters,

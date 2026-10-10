@@ -21,6 +21,8 @@ Environment=PEDALSHIELD_BIRTHDAY=3361149
 Environment=PEDALSHIELD_ZAT_PER_KM=793
 Environment=PEDALSHIELD_MAX_PAYOUT_ZAT=500000
 Environment=PEDALSHIELD_AUTO_PAYOUT=1
+# Encrypted memo receipt on every payout (GHOST1 r=<receipt> d=<km>). Remove to turn off.
+Environment=PEDALSHIELD_RECEIPT_MEMO=1
 Environment=PEDALSHIELD_DB=/home/pedal/Pedalshield/zcash-service/pedalshield.sqlite
 Environment=TREASURY_SPENDING_KEY_FILE=/home/pedal/Pedalshield/zcash-service/treasury-keys/treasury_spending_key.bin
 # EDIT: your treasury UA
