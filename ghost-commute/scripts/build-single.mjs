@@ -54,4 +54,12 @@ ${scripts}
 `,
 );
 writeFileSync(`${W}/dist/fragment.html`, `<title>Ghost Commute</title>\n<style>${css}</style>\n${body}\n${scripts}\n`);
+// Public demo: Pages and Netlify both publish ../landing/, so the demo goes live at /ghost-commute/ on push to main.
+import("node:fs").then(({ existsSync, mkdirSync: mk, copyFileSync }) => {
+  if (existsSync("../landing")) {
+    mk("../landing/ghost-commute", { recursive: true });
+    copyFileSync(`${W}/dist/index.html`, "../landing/ghost-commute/index.html");
+    console.log("✓ ../landing/ghost-commute/index.html (public demo)");
+  }
+});
 console.log("✓ web/dist/index.html and web/dist/fragment.html");

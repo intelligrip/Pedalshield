@@ -56,10 +56,9 @@
       "channel": "fogline"
     },
     "ghost-commute": {
-      "extends": "fogline",
+      "extends": "production",
       "env": {
         "EXPO_PUBLIC_BACKEND_URL": "https://api.pedalshield.app",
-        "EXPO_PUBLIC_APP": "fogline",
         "APP_BRAND": "ghost-commute",
         "EXPO_PUBLIC_BRAND": "Ghost Commute"
       },
