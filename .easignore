@@ -1,3 +1,15 @@
+# EAS build upload filter.
+#
+# WHY THIS FILE EXISTS: without it, EAS falls back to .gitignore — which
+# excludes mobile/src/verification-private/ (the proprietary anti-cheat
+# engine). That shipped TestFlight build 9 with the open stub: every ride
+# stuck "in review", zero verified miles. This file mirrors .gitignore
+# EXCEPT it does NOT exclude the private engine, so real builds get the
+# real engine. Keep the two files in sync when adding entries.
+#
+# NOTE: this only affects what is uploaded to EAS build servers. The
+# public git repo still never contains the engine (.gitignore handles it).
+
 # Node
 node_modules/
 dist/
@@ -25,19 +37,11 @@ android/app/build/
 android/.gradle/
 android/local.properties
 
-# Rust
+# Rust (not needed in a mobile build)
 target/
-# Cargo.lock IS committed - this workspace has a binary
-# (`treasury_demo`), so we want reproducible builds for anyone cloning.
+zcash-service/
 
-# Proprietary anti-cheat / verification engine — NOT open source.
-# The real scoring rubric, thresholds, feature extraction, ML model and
-# fraud dataset live here. Present locally for the real build; excluded
-# from the public (MIT) repo. The public repo ships only the open interface
-# + a stub (see mobile/src/verification/), so forks build and test but do
-# not get the moat. See mobile/src/verification-private/README.md.
-
-# Env / secrets
+# Env / secrets — NEVER upload these
 .env
 .env.local
 *.pem
@@ -53,25 +57,19 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Logs
+# Logs / coverage / temp
 *.log
 npm-debug.log*
 yarn-debug.log*
-
-# Coverage
 coverage/
-
-# LibreOffice / temp lock files (from PDF generation)
 .~lock.*#
 *.tmp
 
-# Raw demo footage — never in the public repo (final video goes to YouTube)
-clips/*.mov
-clips/*.mp4
-clips/*.MOV
-clips/*.MP4
-
-# Live databases are never in git (each deployment owns its own)
-zcash-service/pedalshield.sqlite
-*.pmtiles
-.cratesrc/
+# Heavy repo content irrelevant to the app build
+docs/
+brand/
+clips/
+landing/
+deploy/
+*.pdf
+*.docx
