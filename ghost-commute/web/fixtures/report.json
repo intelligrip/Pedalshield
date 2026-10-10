@@ -1,0 +1,63 @@
+{
+  "action_index": 0,
+  "checks": [
+    {
+      "check": "transaction data hashes to txid d93c06bf0bbf5208db40c8eee7c1e6b6157c0bec9d2f0129293da9ea59b64215",
+      "ok": true
+    },
+    {
+      "check": "note commitment opens ironwood action #0: 73000 zat to the disclosed receiver",
+      "ok": true
+    },
+    {
+      "check": "esk re-derived from rseed reproduces the on-chain ephemeral key; memo decrypted",
+      "ok": true
+    },
+    {
+      "check": "memo receipt id matches disclosure",
+      "ok": true
+    },
+    {
+      "check": "OFFLINE: chain inclusion not checked (tx read from a file, or unmined)",
+      "ok": true
+    },
+    {
+      "check": "rider signature on attestation verifies (key 8b10b483f312…)",
+      "ok": true
+    },
+    {
+      "check": "memo receipt id = SHA-256(attestation)",
+      "ok": true
+    },
+    {
+      "check": "payment went to the receiver the rider signed for",
+      "ok": true
+    },
+    {
+      "check": "motion check verdict is `bike` (prototype check, see README)",
+      "ok": true
+    }
+  ],
+  "memo": null,
+  "memo_sha256": "e248792400060b2f11795805fc2db6d0fbaaff401f81f071a99b3f03cd248463",
+  "mined_height": null,
+  "pool": "ironwood",
+  "receipt_id": "d9855e390e19cc3bd764ce2cc41e7ea0",
+  "ride": {
+    "distance_m": 7300,
+    "motion_check": "prototype-v1",
+    "route_commit": "2217a9993deecbc3f166f15ccb492375e36026282af5e887562a3ae0ad949ffe",
+    "verdict": "bike",
+    "window": {
+      "end": 1791300600,
+      "start": 1791298800
+    },
+    "zone": "bend-or"
+  },
+  "route": "withheld",
+  "source": "file tx.hex (offline: chain inclusion NOT checked)",
+  "txid": "d93c06bf0bbf5208db40c8eee7c1e6b6157c0bec9d2f0129293da9ea59b64215",
+  "value_zat": 73000,
+  "value_zec": "0.00073000",
+  "verified": true
+}

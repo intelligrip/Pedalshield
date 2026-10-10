@@ -1,0 +1,14 @@
+cli/target/
+wallets/
+demo-out/
+*.local
+*.local.json
+/rider-key.json
+/sponsor-ledger.json
+/payout.json
+/txid.txt
+/report.json
+/disclosure.json
+/attestation.json
+/sim/
+private-audit/

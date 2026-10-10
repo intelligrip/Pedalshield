@@ -2,7 +2,7 @@ import React from 'react';
 import { Share, StyleSheet, Text, View } from 'react-native';
 import { Button } from './Button.tsx';
 import { theme } from '../app/theme.ts';
-import { EXPLORER_TX_BASE } from '../lib/config.ts';
+import { EXPLORER_TX_BASE, IS_GHOST_COMMUTE } from '../lib/config.ts';
 import { distanceUnit, formatDistance, useUnits } from '../lib/units.ts';
 
 /**
@@ -32,7 +32,7 @@ export function ShareCard({
       `Rode ${formatDistance(km)} ${distanceUnit()}. My phone verified it — the route never ` +
       `left the device. An autonomous treasury paid me shielded ZEC on ` +
       `Zcash mainnet. Proof: ${EXPLORER_TX_BASE}${txid}` +
-      `\n\nRide private. Earn shielded. #Pedalshield`;
+      (IS_GHOST_COMMUTE ? `\n\nGet paid to bike. Nobody learns where you live. #GhostCommute` : `\n\nRide private. Earn shielded. #Pedalshield`);
     try {
       await Share.share({ message: msg });
     } catch {

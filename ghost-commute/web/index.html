@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ghost Commute</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◌</span>
+      <div>
+        <h1>Ghost Commute</h1>
+        <p class="tag">Get paid to bike. Nobody learns where you live.</p>
+      </div>
+    </div>
+    <nav role="tablist">
+      <button role="tab" data-tab="ride" aria-selected="true">1 · Ride</button>
+      <button role="tab" data-tab="sponsor">2 · Sponsor</button>
+      <button role="tab" data-tab="auditor">3 · Auditor</button>
+      <button role="tab" data-tab="wallet">4 · Rider wallet</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- RIDE -->
+    <section id="ride" class="tab active">
+      <div class="lede">
+        <span class="chip">Strava for people who hate Strava</span>
+        <p>Your ride is checked <b>in this tab</b>. No upload, no map tiles, no server. What leaves is a signed note that says “a bike moved about this far, around this time, somewhere in this city.”</p>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Load a ride</h2>
+          <div class="row wrap">
+            <button class="ghost" data-sample="bike-commute">🚲 bike commute</button>
+            <button class="ghost" data-sample="car-commute">🚗 car “commute”</button>
+            <button class="ghost" data-sample="bus-teleport">🚌 bus teleport</button>
+            <button class="ghost" data-sample="walk">🚶 walk</button>
+          </div>
+          <label class="file">or your own GPX <input type="file" id="gpxFile" accept=".gpx,application/gpx+xml" /></label>
+          <canvas id="routeCanvas" width="640" height="360" aria-label="Route preview, rendered locally"></canvas>
+          <p class="fine">This line exists only in this tab. Close it and it’s gone.</p>
+        </div>
+
+        <div class="card">
+          <h2>Motion check <span class="proto">prototype</span></h2>
+          <div id="verdict" class="verdict empty">load a ride</div>
+          <dl id="stats" class="stats"></dl>
+          <ul id="reasons" class="reasons"></ul>
+          <p class="fine">Catches cars, buses and GPS teleports. It does <b>not</b> catch a forged GPX or a moped in a bike costume. Real anti-cheat needs device attestation; see README.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Attest</h2>
+        <label>Payout address (fresh unified address from your wallet)
+          <input id="payoutUa" placeholder="utest1…" spellcheck="false" autocomplete="off" />
+        </label>
+        <div class="row wrap">
+          <button id="attestBtn" class="primary" disabled>Sign attestation</button>
+          <button id="newKeyBtn" class="ghost">New rider key</button>
+          <span id="keyInfo" class="fine mono"></span>
+        </div>
+        <div id="attestOut" class="grid2 hidden">
+          <div class="pane stays">
+            <h3>Stays on this device</h3>
+            <ul id="staysList"></ul>
+          </div>
+          <div class="pane leaves">
+            <h3>Leaves this device</h3>
+            <pre id="attestJson" class="mono"></pre>
+            <div class="row"><button id="dlAttest" class="ghost">Download attestation.json</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SPONSOR -->
+    <section id="sponsor" class="tab">
+      <div class="lede">
+        <span class="chip">Snitchless subsidy</span>
+        <p>The employer, city or insurer pays for proved bike kilometres. It learns roughly how far and when. It never gets a route, a home, an office, or a wallet history to stitch together.</p>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h2>Incoming claim</h2>
+          <div class="row wrap">
+            <label class="file">attestation.json <input type="file" id="claimFile" accept=".json" /></label>
+            <button id="useLocalClaim" class="ghost">use the one from tab 1</button>
+          </div>
+          <div id="claimCheck"></div>
+        </div>
+        <div class="card">
+          <h2>Payout</h2>
+          <div class="row wrap">
+            <label class="small">zat / km <input id="rate" type="number" value="10000" min="0" /></label>
+            <label class="small">cap (zat) <input id="cap" type="number" value="500000" min="0" /></label>
+          </div>
+          <div id="payoutPreview" class="fine">waiting for a valid claim</div>
+          <h3>Run it</h3>
+          <pre id="sponsorCmd" class="mono">ghost claim attestation.json --zone bend-or
+# prints the exact zcash-devtool send command: Orchard receiver only, memo encrypted</pre>
+          <div class="learns">
+            <div><h3>Sponsor learns</h3><ul id="learnsYes"><li>—</li></ul></div>
+            <div><h3>Sponsor never gets</h3><ul><li>GPS trace or route</li><li>home or workplace</li><li>a reusable address (one diversified address per payout)</li><li>the rider’s balance or other transactions</li></ul></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUDITOR -->
+    <section id="auditor" class="tab">
+      <div class="lede">
+        <p>An auditor (finance, a grant committee, a city clerk) gets <b>one-note disclosures</b>: one per payout, or a sponsor's whole <b>audit pack</b>. Each proves a shielded payment happened, for this amount, to this receiver. It opens nothing else, and no route was ever in it.</p>
+      </div>
+      <div class="card">
+        <div class="row wrap">
+          <label class="file">statement.json (<code>ghost audit verify</code>) or report.json (<code>ghost disclose verify --json</code>) <input type="file" id="reportFile" accept=".json" /></label>
+          <label class="file">optional attestation.json (cross-check in browser) <input type="file" id="auditAttFile" accept=".json" /></label>
+        </div>
+        <div class="row wrap">
+          <button class="ghost" data-fixture="statement">Example: sponsor audit statement</button>
+          <button class="ghost" data-fixture="report">Example: single payout + ride</button>
+        </div>
+        <div id="auditCard" class="audit hidden">
+          <div class="stamp">ROUTE<br />WITHHELD</div>
+          <div class="audit-head" id="auditHead"></div>
+          <dl class="stats" id="auditStats"></dl>
+          <ul class="checks" id="auditChecks"></ul>
+          <p class="fine" id="auditCross"></p>
+        </div>
+        <p class="fine">The cryptographic check runs in the <code>ghost</code> CLI, against chain data fetched from lightwalletd. This page displays its report and re-checks the receipt hash and rider signature in your browser.</p>
+      </div>
+    </section>
+
+    <!-- WALLET -->
+    <section id="wallet" class="tab">
+      <div class="lede"><p>Only the rider’s viewing key can open this. The chain stores 580 bytes of ciphertext per action and isn’t telling.</p></div>
+      <div class="card">
+        <label class="file">rider-receipt.local.json from <code>ghost disclose create</code> <input type="file" id="receiptFile" accept=".json" /></label>
+        <div class="row"><button class="ghost" data-fixture="receipt">Example receipt</button></div>
+        <div id="memoCard" class="memo hidden"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Zcash testnet · shielded Orchard-protocol payouts · memo encrypted · one-note disclosure</span>
+    <span>Motion check is a prototype. Don’t bet a pension on it.</span>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

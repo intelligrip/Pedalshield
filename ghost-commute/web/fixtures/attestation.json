@@ -1,0 +1,20 @@
+{
+  "v": "ghost-commute/attest/1",
+  "rider_pk": "8b10b483f31224ef60f197ee082181267b0a65175f8c998ae0e6f7e1555d97f3",
+  "payout_ua": "utest1r0y38tgnsy2ce9e8hl4yyt0y3rv2nweyhlv9m4nljjcg29dxgm9sdpkwd7tyc2yss80fe2m3kqywukhya72ujst4ujlyysslngjtvgrk",
+  "distance_m": 7300,
+  "window": {
+    "start": 1791298800,
+    "end": 1791300600
+  },
+  "zone": "bend-or",
+  "motion": {
+    "verdict": "bike",
+    "check": "prototype-v1",
+    "median_kmh": 20,
+    "p95_kmh": 26
+  },
+  "route_commit": "2217a9993deecbc3f166f15ccb492375e36026282af5e887562a3ae0ad949ffe",
+  "nonce": "8c9aaca516a723aca710484c034c3448",
+  "sig": "3cf17f11eafc39d3f4ec6a37a3f42e6a5f9c8d3e50de5ebf3c9915433e00a5bcd0fc264d74c53f49b829b1072d72241777c72a45217f94f9f14620246e00a90c"
+}

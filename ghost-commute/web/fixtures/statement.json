@@ -1,0 +1,49 @@
+{
+  "all_verified": true,
+  "chain_inclusion": "NOT checked (offline tx files)",
+  "items": [
+    {
+      "action_index": 0,
+      "memo_sha256": "e248792400060b2f11795805fc2db6d0fbaaff401f81f071a99b3f03cd248463",
+      "mined_height": null,
+      "pool": "ironwood",
+      "receipt_id": "d9855e390e19cc3bd764ce2cc41e7ea0",
+      "txid": "d93c06bf0bbf5208db40c8eee7c1e6b6157c0bec9d2f0129293da9ea59b64215",
+      "value_zat": 73000,
+      "verified": true
+    },
+    {
+      "action_index": 0,
+      "memo_sha256": "4859a11b393d1fb70bcd461400b7ed109ef05cb2ac207df721288a77b7731e64",
+      "mined_height": null,
+      "pool": "ironwood",
+      "receipt_id": null,
+      "txid": "3362e81e2d783983abd51a090e734c87685ec1339937cf451eed55dfde0a5c61",
+      "value_zat": 41000,
+      "verified": true
+    },
+    {
+      "action_index": 1,
+      "memo_sha256": "2317decf5e5bc81b71749996354e62635b1e7238be9bc333b51ce438197c0767",
+      "mined_height": null,
+      "pool": "ironwood",
+      "receipt_id": null,
+      "txid": "61bf64b97a37338a3b0605a1cd86dfd5aa054045ebc785cff7acd042f2a265ba",
+      "value_zat": 41000,
+      "verified": true
+    }
+  ],
+  "label": "Demo sponsor · pilot payouts (offline)",
+  "mined_height_range": null,
+  "network": "test",
+  "payouts": 3,
+  "pools": {
+    "ironwood": 3
+  },
+  "route": "withheld",
+  "total_zat": 155000,
+  "total_zec": "0.00155000",
+  "v": "ghost-commute/audit-statement/1",
+  "verified": 3,
+  "with_ghost_receipt": 1
+}

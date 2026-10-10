@@ -33,6 +33,14 @@ export const APP_MODE: 'pedalshield' | 'fogline' =
   process.env.EXPO_PUBLIC_APP === 'fogline' ? 'fogline' : 'pedalshield';
 export const IS_FOGLINE = APP_MODE === 'fogline';
 
+/**
+ * Display name for user-facing copy. The `ghost-commute` build profile sets
+ * EXPO_PUBLIC_BRAND="Ghost Commute" (app.config.js swaps the home-screen
+ * name and icon). Unset = Pedalshield.
+ */
+export const BRAND_NAME: string = process.env.EXPO_PUBLIC_BRAND || 'Pedalshield';
+export const IS_GHOST_COMMUTE = BRAND_NAME === 'Ghost Commute';
+
 /** Block explorer base for surfacing a payout txid. */
 export const EXPLORER_TX_BASE = 'https://mainnet.zcashexplorer.app/transactions/';
 

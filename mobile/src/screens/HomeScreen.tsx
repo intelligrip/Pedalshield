@@ -22,7 +22,7 @@ import {
   type UnitPreference,
 } from '../lib/units.ts';
 import { getAccrualBalance, getTreasuryInfo } from '../lib/api.ts';
-import { DEFAULT_ZAT_PER_KM, EXPLORER_TX_BASE } from '../lib/config.ts';
+import { BRAND_NAME, DEFAULT_ZAT_PER_KM, EXPLORER_TX_BASE, IS_GHOST_COMMUTE } from '../lib/config.ts';
 import { onConnectedUAChange } from '../wallet/connectedWallet.ts';
 import {
   onRideHistoryChange,
@@ -88,10 +88,10 @@ export function HomeScreen({ navigation }: { navigation: any }) {
     <ScreenContainer>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.brand}>Pedalshield</Text>
+          <Text style={styles.brand}>{BRAND_NAME}</Text>
           <MainnetStatusChip />
         </View>
-        <Text style={styles.tagline}>Ride private. Earn shielded.</Text>
+        <Text style={styles.tagline}>{IS_GHOST_COMMUTE ? 'Get paid to bike. Nobody learns where you live.' : 'Ride private. Earn shielded.'}</Text>
       </View>
 
       <ConnectWalletCard />

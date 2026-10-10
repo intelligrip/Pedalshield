@@ -13,7 +13,7 @@ import { Card } from '../components/Card.tsx';
 import { LiveRouteMap } from '../components/LiveRouteMap.tsx';
 import { FoglinePostRide } from '../fogline/FoglinePostRide.tsx';
 import { FoglineRideView } from '../fogline/FoglineRideView.tsx';
-import { IS_FOGLINE } from '../lib/config.ts';
+import { BRAND_NAME, IS_FOGLINE } from '../lib/config.ts';
 import { PayoutCard } from '../components/PayoutCard.tsx';
 import { GhostRideSheet } from '../components/GhostRideSheet.tsx';
 import { PrivacyRevealSheet } from '../components/PrivacyRevealSheet.tsx';
@@ -464,13 +464,13 @@ function GpsBanner() {
   switch (q.status) {
     case 'denied':
       title = 'Location is off';
-      body = 'Pedalshield needs location to measure your ride. Nothing is counting.';
+      body = `${BRAND_NAME} needs location to measure your ride. Nothing is counting.`;
       action = 'settings';
       tone = theme.color.danger;
       break;
     case 'precise-off':
       title = 'Precise Location is off';
-      body = 'Your distance won’t count until Precise Location is on for Pedalshield.';
+      body = `Your distance won’t count until Precise Location is on for ${BRAND_NAME}.`;
       action = 'settings';
       tone = theme.color.danger;
       break;
