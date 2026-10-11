@@ -76,3 +76,7 @@ clips/*.MP4
 zcash-service/pedalshield.sqlite
 *.pmtiles
 .cratesrc/
+
+docs/VERIFICATION_ENGINE_TARGETS.md
+claude-bridge/
+ghost-commute/statement.json
