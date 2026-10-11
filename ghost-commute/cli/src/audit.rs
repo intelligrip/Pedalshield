@@ -183,11 +183,13 @@ pub fn print_statement(s: &Value) {
         let mark = if it["verified"] == true { "✓" } else { "✗" };
         let v = it["value_zat"].as_u64().map(zec).unwrap_or_else(|| "—".into());
         let t = it["txid"].as_str().unwrap_or("");
+        let receipt = it["receipt_id"].as_str().map(|r| format!("receipt {}…", &r[..r.len().min(12)])).unwrap_or_default();
         println!(
-            "  {mark} {}…  {:>10} ZEC  {:<8} {}",
+            "  {mark} {}…  {:>10} ZEC  {:<8} {}{}",
             &t[..t.len().min(16)],
             v,
             it["pool"].as_str().unwrap_or(""),
+            receipt,
             it["error"].as_str().unwrap_or("")
         );
     }

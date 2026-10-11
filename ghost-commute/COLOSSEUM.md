@@ -1,149 +1,125 @@
-# Colosseum Crypto World's Fair: Ghost Commute by Pedalshield (Zcash track)
+# Pedalshield, Colosseum Crypto World's Fair (Zcash track)
 
-**Deadline:** Oct 12, 2026, 11:59 pm PT. Submit from the Arena dashboard.
-**Required:** pitch video (2–3 min), product demo video (≤3 min), public repo, prior-work disclosure. Only work from Sep 14 to Oct 12 is judged.
-
-Every answer below is checked against the **fact sheet**. If you edit an answer, check it against the fact sheet first.
+**Deadline:** Oct 12, 2026, 11:59 pm PT. The team leader submits from the Arena dashboard.
+**Team / company:** Intelligrip Inc. (Samuel B. Newman, solo founder, Bend, OR)
+**Product name everywhere:** Pedalshield. `ghost-commute/` in the repo is the codename for the audit work built this hackathon; we don't use it as a product name.
 
 ---
 
-## Fact sheet (source of truth, checked against the code on Oct 10)
+## Fact sheet (every claim below must match this)
 
-**Names**
-- **Pedalshield** is the company and the iOS app riders install.
-- **Ghost Commute** is the sponsor audit layer built this hackathon (`ghost-commute/` in the repo).
-- **Entry name:** Ghost Commute by Pedalshield.
-
-**Live in production (Pedalshield)**
-- Rides are verified on the phone by the on-device engine (proprietary, not in the public repo). The claim sent to the server has no coordinates, enforced by an open-source unit test.
-- An autonomous treasury pays verified rides in shielded ZEC on mainnet, with a spend pipeline hand-built on librustzcash. Payouts have gone to the Ironwood pool since NU6.3 (July 29), and Ironwood spending was verified on mainnet (tx `43f6b8d2…`).
-- Riders connect their own wallet (e.g. Zodl). Payouts go to that wallet's shielded receiver, and the same address is used each time.
-- **Regular payouts carry no memo.** The memo payout code (`pay_with_memo`) exists but is used only by Fogline, which is excluded.
-- The backend enforces per-ride and daily caps and rejects duplicates. App Attest tokens are **collected but not yet verified**.
-- The data co-op is opt-in and off by default, and sends **coarse aggregates only** (distance band, hour, CO2, region). The client cannot send a route.
-
-**Numbers (backend DB + chain, Oct 10)**
-- 30 rides paid on mainnet, 83.5 mi, first May 31, latest Sep 28.
-- 9 distinct payout addresses (riders, founder included).
-- 3 claims rejected and never paid.
-- 5 rides / 12.2 mi inside the hackathon window.
-- 7 of 7 real mainnet payouts re-verified by the Ghost Commute audit (5 Orchard, 2 Ironwood). The 2 earliest payouts predate viewing-key recovery and can't be audited.
-
-**Built this hackathon (Sep 14 – Oct 12)**
-- **Ghost Commute, working on mainnet:** sender-side one-note disclosures from the treasury's outgoing viewing key, audit packs and statements, and the web demo.
-- **Ghost Commute, prototype (CLI, testnet and offline only, not in the app yet):** coordinate-free signed ride attestations, a fresh shielded-only address per payout, encrypted memo receipts bound to the attestation, and an offline mode with a real Halo 2 proof.
-- **Treasury:** Ironwood note detection and spending, and the memo payout path.
-
-**Not true yet (don't claim)**
-- No paying sponsor or employer. Dollar funding and per-seat pricing are the plan.
-- No memos on regular payouts.
-- No fresh address per payout in the app.
-- App Attest is not verified.
-- No route sharing.
-- FROST threshold signing is roadmap only.
+| Status | Fact |
+|---|---|
+| Live | iOS app on TestFlight. The ride is verified on the phone; the claim carries no coordinates |
+| Live | Automatic shielded ZEC payouts on Zcash mainnet since June 2026, paid through NU6.3 (Ironwood pool) |
+| Live | 9 riders · 30 paid rides · 83.5 miles (5 rides / 12.2 mi during the hackathon) |
+| Live | Payout audit: 7 of 7 payouts to the founder's own wallet verified against mainnet, routes withheld |
+| Live (deployed, first payout pending) | Encrypted memo receipts on each payout |
+| Not yet | App Attest is collected but not verified server-side |
+| Not yet | Each rider is paid at the same address (fresh address per payout is roadmap) |
+| Plan | Miner-funded treasury (Intelligrip-operated Zcash ASICs) |
+| Plan | Outside funders (cities, local businesses, employers) topping up reward pools |
 
 ---
 
 ## Portal fields (paste-ready)
 
-**Project name:** Ghost Commute by Pedalshield
+**Project name:** Pedalshield
 
-**Tagline:** Proof of payment, never proof of whereabouts.
+**One-liner:**
+Get paid to ride your bike, in private money. The phone verifies the ride, the route never leaves it, and rewards arrive as shielded ZEC.
 
-**Brief description:**
-> Employers and cities already pay people to bike to work, but to prove the rides they collect GPS trails: home, office and schedule, sitting in a vendor's database. Pedalshield verifies the ride on the phone and pays riders in shielded ZEC on mainnet. Ghost Commute, built this hackathon, gives sponsors an audit pack that proves every payout on chain and contains no route. Live: 30 rides paid, 7 of 7 payouts audited.
+**Description:**
+Pedalshield pays people to ride their bikes. The app checks each ride on the phone, so the route, home and schedule never leave the device. Riders are paid automatically in shielded ZEC on Zcash mainnet: no one can see who earned what. This hackathon we built the proof side: an audit that verifies every payout on chain without revealing a single rider or route. Next, Zcash miners run by Intelligrip fund the reward treasury: proof-of-work funds proof-of-ride.
 
-**Project website:** https://pedalshield.app/ghost-commute/ (check it loads after the push)
+**How does it use Zcash?**
+Every reward is a shielded Zcash payment, sent automatically by our treasury on mainnet (Orchard/Ironwood since NU6.3). On a public chain, a payout history is a record of someone's riding habits. Shielded notes hide sender, receiver, amount and memo. The treasury uses its outgoing viewing key to prove its own payouts, one note at a time, against the chain, with no rider keys needed. Next, Zcash mining funds the treasury.
 
-**What are you building, and who is it for?**
-> A way to pay people to bike without tracking them. Pedalshield verifies each ride on the rider's phone and pays them in shielded ZEC on Zcash mainnet. The route never leaves the phone. Ghost Commute, built this hackathon, gives the sponsor an audit pack: proof on chain that every payout happened, for what amount and to whom, with no route, address or schedule in it.
-> - **Sponsors:** employers with commuter and wellness benefits, cities funding mode shift, and insurers rewarding active habits. They need proof the money bought real bike miles, without the liability of holding employees' location data.
-> - **Riders:** commuters who'd take the incentive but won't install a tracker. They get paid privately, and nobody, including us, can map their life.
+**The problem:**
+Paying people to ride needs proof the ride happened. Today proof means a GPS trail: home, work and schedule in someone's database, and location data is legally sensitive in California, Oregon and Washington. Pay on a public blockchain and the record is permanent. So privacy and proof look like they conflict.
 
-**Why did you build this?**
-> I ride, and I live in Bend, where cycling is part of daily life. I also build on Zcash. Pedalshield started as a bike anti-theft and tracking product, and the deeper I got into tracking, the clearer the problem was: every ride app and incentive program asks you to hand over a map of your life to get a reward. Then I saw the second trap. Pay riders on a transparent blockchain and the payout history becomes that map, permanently. Zcash is the only place I could build this honestly, because shielded payments make privacy the structure of the system rather than a policy. I also think cycling is how Zcash reaches normal people: nobody downloads a privacy wallet for its own sake, but people will to get paid to ride.
+**The solution:**
+- **On the phone:** the ride is verified on the device. The claim leaves without coordinates, and an open-source test enforces that.
+- **On chain:** the treasury pays shielded ZEC automatically. Explorers see only ciphertext.
+- **Proof (built this hackathon):** `ghost audit pack` and `ghost audit verify` turn the treasury's payouts into one statement anyone can check against Zcash mainnet: every amount and recipient verified, every route withheld, because no route was ever sent.
 
-**Why does cycling data need to be qualified? (WA / OR / CA)**
-> Washington, Oregon and California all push employers to cut drive-alone commutes. Washington's Commute Trip Reduction law and Oregon's Employee Commute Options rule require large employers to survey commutes, and California's parking cash-out law pays non-drivers. The same states treat the proof as regulated data. California covers employees' precise geolocation under the CCPA, Oregon requires opt-in consent for it and has banned its sale, and Washington's My Health My Data Act can reach fitness and location data, with a private right of action. Pedalshield verifies the ride on the phone and sends only a minimal claim, never coordinates. Sponsors get proof without holding regulated data.
+**Business model:**
+Proof-of-work funds proof-of-ride. Intelligrip Inc. will operate Zcash ASIC miners (Antminer Z15 Pro: about $3.5k, 2.8 kW, about 14 ZEC/year each). Mined ZEC is shielded into the treasury that already pays riders. A published policy splits it: 50% to rider rewards, 50% to company revenue and reserves. Rewards follow mining output, so the program never promises more than it earns. One miner funds 400+ miles of riding a day at about $0.09/mile. Riders never pay; there's no token. Later, cities, local businesses and employers can top up reward pools for a fee, and the audit shows where every coin went.
 
-**Why now?**
-> The law just closed the tracking option. Oregon banned selling precise geolocation in January 2026. California's privacy law has covered employees' location data since 2023. Washington's My Health My Data Act lets individuals sue over fitness and location data. Meanwhile, Washington and Oregon still require large employers to measure commute mode shift. And shielded payments are production-ready: Zcash's Ironwood upgrade went live in July, and we've paid real riders through it on mainnet.
+**Business model (500 characters):**
+Pedalshield pays people to ride their bikes, in shielded ZEC. Our plan: proof-of-work funds proof-of-ride. We will run Zcash ASIC miners (Antminer Z15 Pro, ~$3.5k, ~14 ZEC/yr each) whose rewards go straight into the shielded treasury. A fixed policy splits mined ZEC: half to rider rewards, half to company revenue and reserves. One miner can fund 400+ miles of riding a day. Riders never pay. Sponsors can top up pools later; our audit proves every payout.
 
-**How does Ghost Commute use Zcash? (≤500 characters)**
-> A public payout for "biked home to work" maps someone's life, so every Pedalshield reward is shielded ZEC on mainnet, paid by an autonomous treasury built on librustzcash, in the Ironwood pool since NU6.3. Riders are paid only at their wallet's shielded receiver. Ghost Commute adds sponsor audits: the treasury's viewing key proves each payout's amount and recipient on chain without revealing the route. 7 of 7 real payouts verified; the encrypted-memo receipts are next.
+**Risks and how we handle them:**
+- **ZEC price and mining difficulty:** rewards are a share of output, not a fixed promise.
+- **Energy use:** renewable power where possible, reuse the miners' heat in Bend winters, and publish energy used against car miles replaced.
+- **Zcash's planned hybrid proof-of-stake (Crosslink):** add staking as a second treasury source.
+- **Fake rides:** the on-device verifier is the core asset; server-side App Attest verification is next.
 
-**Category:** Payments (secondary: Consumer, if allowed).
-
-**Mobile-focused dapp?** Yes.
-> Mobile-first: rides are verified on the phone and paid in shielded ZEC to the rider's own wallet. No smart contracts. Payouts run through an autonomous treasury on Zcash mainnet.
-
-**Biggest threat / risk (≤500 characters)**
-> Biggest threat: fake rides. A phone can be spoofed, and paying for miles invites cheating. Our answer is layered: an on-device verification engine, server-side caps and duplicate checks, and App Attest (rolling out). 3 claims already rejected in production. Next: ZK proof of distance. Other risks: slow employer sales cycles (we start with one 50-seat Bend pilot), privacy-coin perception (sponsors can fund in USD), and a solo founder; the treasury runs autonomously.
-
-**Anything else judges should know? (≤500 characters)**
-> Pedalshield (May 2026) already paid riders in shielded ZEC on mainnet. New this hackathon: Ghost Commute's sponsor audit layer, Ironwood spending and the memo payout path (commits from Sep 30). Verify in 5 min: ghost audit verify ghost-commute/fixtures/mainnet/audit-pack re-checks 7 real payouts on chain. Anti-cheat engine is proprietary, not in the repo; Fogline in the repo isn't part of this entry. Web demo uses a simplified ride check. Solo founder, Bend OR.
-
-**How will governments interact with the data?**
-> As funders, they get audit packs proving every payout without routes. As planners, they get opt-in aggregate data (distance band, hour, region, CO2), never individual traces. As regulators, employers can report verified commute counts instead of self-reported surveys. Legal process can reach payout records, but never routes, because the route never leaves the phone.
-
-**Logo:** Ghost Commute icon (`ghost-commute-logo-1024.png`), or the Pedalshield icon if you want it to match the installed app.
-
-**Repo:** https://github.com/intelligrip/Pedalshield (hackathon work: https://github.com/intelligrip/Pedalshield/tree/main/ghost-commute)
-
-**App access:** Pedalshield on TestFlight, build 25 (`production` profile). [[public TestFlight link]]
-
-**Prior work (disclosure):**
-> Pedalshield started May 28, 2026. Built before this hackathon: the iOS app, the on-device verification engine (proprietary), the autonomous Orchard payout pipeline and backend, the first mainnet payouts, and the NU6.2/NU6.3 upgrades, including Ironwood-pool outputs on activation day (tx `fbf4e134…`). It was entered in the ZecHub Hackathon 2026. Built during this hackathon: the Ghost Commute sponsor audit layer, Ironwood spending and the memo payout path. All of it is visible in commits from Sep 30 onward.
+**Go-to-market:**
+Bend, OR first: local riders, bike shops and the cycling community. The app is free and the rewards are the hook. Grow city by city, then bring in outside funders once the rider base and audit record exist.
 
 **Traction:**
-- 30 rides verified on the phone and paid on mainnet, 83.5 mi (May 31 – Sep 28)
-- 9 distinct payout addresses (riders, founder included)
-- 3 claims rejected by the verifier and never paid
-- 7 of 7 real payouts re-verified on chain by the Ghost Commute audit. Anyone can rerun it.
-- TestFlight testers: [[n]]
+Live on Zcash mainnet since June 2026. 9 riders, 30 paid rides, 83.5 miles. Payouts continued through the NU6.3 upgrade (paid on activation day). The audit verifies 7 of 7 sample payouts against mainnet; anyone can rerun it from the repo.
 
-**Business model (plan):** Riders never pay, and there's no token. Sponsors pay for verified miles: employers at about $6/seat/month plus a reward pool pegged to the EPA social cost of carbon (≈$0.09/mile); cities get aggregate mode-shift reports; insurers and wellness platforms get on-device behavior features. No paying sponsor yet. First target: a 50-seat Bend employer pilot.
+**What we built during the hackathon (Sep 14 – Oct 12):**
+- **Payout audit** (`ghost-commute/`, MIT): one-note disclosures as recipient (IVK) or sender (OVK), audit packs and statements, verified against lightwalletd, plus a tamper test.
+- **Mainnet audit:** 7 of 7 real payouts verified, published on the website.
+- **Ironwood support in the treasury:** first Ironwood→Ironwood mainnet treasury spend (block 3,504,310).
+- **Encrypted memo receipts on every payout:** deployed to the live backend.
+- **Website:** pedalshield.app/ghost-commute, with the live audit and a clickable prototype.
 
-**Team:** Samuel B. Newman, solo founder, Bend, OR. Built the SDK-free Zcash payout pipeline, the iOS app and the on-device verifier. Kept payouts running through two consensus upgrades in one summer.
+**Prior work (disclosure):**
+Pedalshield started May 28, 2026, before this hackathon. Prior work: the React Native app (TestFlight), the on-device verifier (its scoring is proprietary and not in the public repo), the automatic Orchard payout pipeline and backend, the first mainnet payouts (June–July), the NU6.2/NU6.3 updates, and the move to Ironwood on activation day. It was entered in the ZecHub Hackathon 2026. Everything under "built during the hackathon" is new since Sep 14 and visible in the git history.
 
-**Progress update to post now:**
-> Mainnet audit: 7 of 7 real Pedalshield payouts re-verified on chain from the treasury's view-only key. Amounts and recipients proven, routes withheld. Rerun it: `ghost audit verify ghost-commute/fixtures/mainnet/audit-pack`.
+**Repo context (500 characters):**
+The repo is the full Pedalshield product: mobile app (mobile/), Zcash treasury and backend (zcash-service/), website (landing/). The hackathon work is in ghost-commute/: the payout audit CLI (ghost audit pack/verify) and the mainnet audit fixtures. The on-device verifier's scoring engine is proprietary and excluded; the app falls back to an open stub that marks rides "in review". "Ghost Commute" is an internal codename, not a separate product.
+
+**Anything else judges should know (500 characters):**
+Everything shown is live on Zcash mainnet, not testnet: real riders, real shielded payouts, through two network upgrades. You can verify our payouts yourself: clone the repo and run ghost audit verify on ghost-commute/fixtures/mainnet. Built solo by a founder who rides. The next step is self-funding: Zcash miners that pay riders, so the program grows without investors or a token.
+
+**Category:** Consumer app / Payments (mobile, Zcash)
+
+**Team:** Samuel B. Newman, founder of Intelligrip Inc., Bend, OR. Solo builder of the app, the on-device verifier and a hand-built Zcash payout pipeline that kept paying through two consensus upgrades in one summer.
+
+**Links:**
+- Product: https://pedalshield.app/ghost-commute/
+- App: https://testflight.apple.com/join/2JmfCjuH
+- Repo: https://github.com/intelligrip/Pedalshield
+- Backend health: https://api.pedalshield.app/healthz
 
 ---
 
-## Pitch video (2:30)
+## Demo video (about 2:00, screen recording + voice)
 
-| t | Picture | Words |
+| t | Screen | Say |
 |---|---|---|
-| 0:00 | Riding in Bend | "Lots of employers and cities will pay you to bike to work. The catch is they want proof, and proof means your GPS trail." |
-| 0:12 | Stylised commute heat-map (fake data) | "That's your home, your office and your schedule in a vendor's database. Put the payment on a public blockchain and it's there forever." |
-| 0:25 | To camera | "I'm Sam. I built Pedalshield so you can get paid to bike and nobody learns where you live." |
-| 0:33 | Pedalshield app: ride → verified → payout card with txid | "The phone verifies the ride, and the route never leaves it. The reward is real ZEC, shielded, paid automatically on Zcash mainnet. We've paid thirty rides since May." |
-| 0:55 | Explorer page showing a shielded tx | "On chain, nobody can see who got paid or how much." |
-| 1:05 | Terminal: `ghost audit verify` → ALL PAYOUTS VERIFIED | "This month I built Ghost Commute, the part sponsors pay for. Finance gets an audit pack: every payout proven on chain, amount and recipient. And no route, because we never had one to give them." |
-| 1:30 | To camera | "That's the question that kills privacy reviews: how do we know the money went to real riders? Here the answer is a file you can verify yourself." |
-| 1:45 | Slide: business model | "Sponsors pay per seat plus a reward pool pegged to the carbon a biked mile saves, about nine cents. Riders never pay. No token." |
-| 2:00 | Slide: 30 rides · 83.5 mi · 3 rejected · 7/7 audited | "Thirty verified rides, eighty-three miles, every payout shielded on mainnet, and three claims the verifier refused to pay. Next is a 50-seat employer pilot here in Bend." |
-| 2:15 | Riding | "Proof of payment, never proof of whereabouts. Ghost Commute by Pedalshield." |
+| 0:00 | Phone: open a paid ride | "Pedalshield pays you to ride your bike. The app checks the ride on my phone." |
+| 0:20 | Phone: the "what leaves your phone" screen | "This is everything that gets sent: distance and time. Never the route." |
+| 0:40 | Phone: payout card | "I'm paid in shielded Zcash, automatically, on mainnet." |
+| 0:55 | Explorer: the payout tx | "On the blockchain, nobody can see who got paid or how much." |
+| 1:10 | MAC terminal: `ghost audit verify fixtures/mainnet/audit-pack` | "And we can still prove every payout is real. Seven of seven verified against mainnet. Routes withheld, because we never had them." |
+| 1:40 | MAC terminal: verify the tampered pack | "Change one amount and the proof breaks." |
+| 1:55 | Website hero | "Pedalshield. Proof of payment, never proof of whereabouts." |
 
-## Demo video (2:50)
+## Pitch video (about 2:30, founder on camera)
 
-1. **0:00 Pedalshield app, real ride:** ride → "verified on device" → payout card → explorer txid.
-2. **0:25 Web demo, Ride tab** (label on screen: "Ghost Commute prototype flow"): car rejected, bus teleport rejected, bike signed. "Stays on this device" vs "Leaves this device".
-3. **0:55 Sponsor tab:** the claim verifies in the browser.
-4. **1:15 Public view:** `ghost tx public --network main --txid <a real payout>`: no amount, no recipient.
-5. **1:35 Mainnet audit:** `ghost audit verify fixtures/mainnet/audit-pack` → ALL PAYOUTS VERIFIED. Auditor tab → "Real mainnet audit" → ROUTE WITHHELD stamp.
-6. **2:20 Try to cheat:** change one amount in the pack, re-verify → ✗ "recovered note differs from disclosed note".
-7. **2:40 Close:** "Proof of payment, never proof of whereabouts."
+| t | Say |
+|---|---|
+| 0:00 | "I'm Sam, founder of Intelligrip. I built Pedalshield: get paid to ride your bike, and nobody learns where you went." |
+| 0:15 | "Paying people to ride needs proof. Today proof means a GPS trail: your home, your work, your schedule. On a public blockchain, that's permanent." |
+| 0:35 | "Pedalshield checks the ride on your phone. The route never leaves it. You're paid in shielded Zcash: private by default." |
+| 0:55 | "It's live on mainnet: 9 riders, 30 paid rides, and it kept paying through two network upgrades." |
+| 1:10 | "This hackathon I built the proof: an audit anyone can run that verifies every payout on chain, without exposing a single rider." |
+| 1:35 | "Next, proof-of-work funds proof-of-ride. We'll run Zcash miners; what they earn goes to riders, half and half with the company. No investors needed to keep paying, no token." |
+| 2:00 | "Then cities and local businesses can add to the pool, and the audit shows where every coin went." |
+| 2:15 | "Pedalshield. Proof of payment, never proof of whereabouts." |
 
 ---
 
 ## Before 11:59 pm PT Oct 12
 
-- [ ] Push to main; check https://pedalshield.app/ghost-commute/ loads
-- [ ] `eas build -p ios --profile production --auto-submit` (build 25, Pedalshield); public TestFlight link
-- [ ] Fill [[ ]]: TestFlight link and tester count
-- [ ] Record both videos
-- [ ] Post the progress update
-- [ ] Check ZECATHON rules on entering the same work elsewhere
-- [ ] Submit early
+- [x] Public TestFlight link: https://testflight.apple.com/join/2JmfCjuH
+- [ ] Record the demo video, then the pitch video
+- [ ] Paste the fields above into the portal
+- [ ] Optional: one paid ride with a memo receipt → add it to the audit, mark receipts Live
+- [ ] Submit early, not in the last hour

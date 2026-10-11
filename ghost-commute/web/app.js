@@ -295,6 +295,7 @@ function renderReceipt(r) {
         <td>${esc(it.pool || "")}</td>
         <td class="num">${it.value_zat != null ? (it.value_zat / 1e8).toFixed(8) : "—"}</td>
         <td class="num">${it.mined_height ?? "—"}</td>
+        <td>${it.receipt_id ? `<code>${esc(it.receipt_id.slice(0, 10))}…</code>` : `<span class="fine">none</span>`}</td>
         <td class="${it.verified ? "ok" : "bad"}">${it.verified ? "✓ verified" : "✗ " + esc(it.error || "failed")}</td>
       </tr>`).join("");
     const pools = Object.entries(st.pools || {}).map(([k, v]) => `${v} ${esc(k)}`).join(", ");
@@ -303,7 +304,7 @@ function renderReceipt(r) {
       <div class="audit-head">${st.all_verified ? `<span class="ok">✓ ${st.verified} of ${st.payouts} payouts verified</span>` : `<span class="bad">${st.verified} of ${st.payouts} verified</span>`}</div>
       <p class="fine">${esc(st.label || "")} · Zcash ${esc(st.network === "main" ? "mainnet" : st.network)} · ${pools} · blocks ${st.mined_height_range ? st.mined_height_range.join("–") : "—"}</p>
       <div class="tablewrap"><table>
-        <thead><tr><th>Transaction</th><th>Pool</th><th class="num">ZEC</th><th class="num">Block</th><th>Check</th></tr></thead>
+        <thead><tr><th>Transaction</th><th>Pool</th><th class="num">ZEC</th><th class="num">Block</th><th>Memo receipt</th><th>Check</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
       <p class="fine">Each row re-opens one shielded payout from its disclosure: the note commitment matches the transaction on chain, and the amount and recipient are proven. Nothing else in either wallet is visible, and no route exists to show.</p>`;
