@@ -43,7 +43,7 @@ writeFileSync(
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Ghost Commute by Pedalshield</title>
+<title>Pedalshield · Get paid to ride, privately</title>
 <meta name="description" content="Proof of payment, never proof of whereabouts. Bike rides verified on the phone, paid in shielded ZEC, audited without the route." />
 <style>${css}</style>
 </head>
@@ -54,7 +54,7 @@ ${scripts}
 </html>
 `,
 );
-writeFileSync(`${W}/dist/fragment.html`, `<title>Ghost Commute by Pedalshield</title>
+writeFileSync(`${W}/dist/fragment.html`, `<title>Pedalshield · Get paid to ride, privately</title>
 <meta name="description" content="Proof of payment, never proof of whereabouts. Bike rides verified on the phone, paid in shielded ZEC, audited without the route." />\n<style>${css}</style>\n${body}\n${scripts}\n`);
 // Public demo: Pages and Netlify both publish ../landing/, so the demo goes live at /ghost-commute/ on push to main.
 import("node:fs").then(({ existsSync, mkdirSync: mk, copyFileSync }) => {
