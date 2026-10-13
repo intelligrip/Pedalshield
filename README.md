@@ -2,18 +2,23 @@
 
 **Ride private. Earn shielded.**
 
-[![Track](https://img.shields.io/badge/track-Games-D946EF)](https://zechub.wiki/hackathon)
+[![Track](https://img.shields.io/badge/Colosseum-Zcash%20track-F4B728)](https://colosseum.com/worldsfair)
 [![License](https://img.shields.io/badge/license-MIT-22D3A1)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-34%20passing-22D3A1)](mobile/src)
 [![Mainnet](https://img.shields.io/badge/mainnet-payouts%20proven-22D3A1)](#proof-not-promises--mainnet-receipts)
-[![Hackathon](https://img.shields.io/badge/ZecHub%20Hackathon-2026-A855F7)](https://github.com/ZecHub/zechub/tree/main/Hackathon/2026)
 
 A privacy-first, mobile bike-to-earn app built on Zcash. Cyclists track
 real-world rides, the phone verifies them entirely locally — **your route
 never leaves the device** — and an **autonomous backend pays out shielded
 ZEC on mainnet**. No manual operator. No route database. Nothing to leak.
 
-> Submission for the **ZecHub Hackathon 2026 — Games track**.
+> **Colosseum Crypto World's Fair, Zcash track.** Built by Intelligrip Inc.
+>
+> - Demo video: https://youtu.be/f1jWGuUvHrw · Pitch video: https://youtu.be/Bd8cflF5e_0
+> - Try it: https://testflight.apple.com/join/2JmfCjuH · Site: https://pedalshield.app/ghost-commute/
+> - **Built during the hackathon:** the payout audit in [`ghost-commute/`](ghost-commute/). Verify our real mainnet payouts yourself:
+>   `cd ghost-commute && (cd cli && cargo build --release) && ./cli/target/release/ghost audit verify fixtures/mainnet/audit-pack`
+> - Submission copy and prior-work disclosure: [`ghost-commute/COLOSSEUM.md`](ghost-commute/COLOSSEUM.md)
 
 ---
 
@@ -198,7 +203,7 @@ shielded payout → txid in the explorer.
 - **Threshold signing (roadmap):** `ZcashFoundation/frost`, following
   ZIP-312 for RedPallas.
 
-## Hackathon target
+## Earlier entry: ZecHub Hackathon 2026
 
 | Field | Value |
 | --- | --- |
@@ -213,7 +218,7 @@ MIT — see [`LICENSE`](LICENSE).
 
 ## Acknowledgements
 
-Built for the [ZecHub Hackathon 2026](https://zechub.wiki/hackathon). Uses
+First built for the [ZecHub Hackathon 2026](https://zechub.wiki/hackathon) (prior work); entered in the Colosseum Crypto World's Fair (Zcash track). Uses
 the `librustzcash` workspace, lightwalletd, and the Zcash Foundation's FROST
 crates. Thanks to the ZecHub community — and to the engineers who shipped
 NU6.2 in days.
